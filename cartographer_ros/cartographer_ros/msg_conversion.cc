@@ -26,49 +26,21 @@
 #include "cartographer/transform/transform.h"
 #include "cartographer_ros/time_conversion.h"
 #include "geometry_msgs/Pose.h"
+#include "geometry_msgs/PoseStamped.h"
 #include "geometry_msgs/Quaternion.h"
 #include "geometry_msgs/Transform.h"
 #include "geometry_msgs/TransformStamped.h"
 #include "geometry_msgs/Vector3.h"
 #include "glog/logging.h"
 #include "nav_msgs/OccupancyGrid.h"
-#include "pcl/point_cloud.h"
-#include "pcl/point_types.h"
-#include "pcl_conversions/pcl_conversions.h"
 #include "ros/ros.h"
 #include "ros/serialization.h"
 #include "sensor_msgs/Imu.h"
 #include "sensor_msgs/LaserScan.h"
 #include "sensor_msgs/MultiEchoLaserScan.h"
 #include "sensor_msgs/PointCloud2.h"
-
-namespace {
-
-// Sizes of PCL point types have to be 4n floats for alignment, as described in
-// http://pointclouds.org/documentation/tutorials/adding_custom_ptype.php
-struct PointXYZT {
-  float x;
-  float y;
-  float z;
-  float time;
-};
-
-struct PointXYZIT {
-  PCL_ADD_POINT4D;
-  float intensity;
-  float time;
-  float unused_padding[2];
-};
-
-}  // namespace
-
-POINT_CLOUD_REGISTER_POINT_STRUCT(
-    PointXYZT, (float, x, x)(float, y, y)(float, z, z)(float, time, time))
-
-POINT_CLOUD_REGISTER_POINT_STRUCT(
-    PointXYZIT,
-    (float, x, x)(float, y, y)(float, z, z)(float, intensity,
-                                            intensity)(float, time, time))
+#include "tf2_ros/transform_broadcaster.h"
+#include "tf2/LinearMath/Matrix3x3.h"
 
 namespace cartographer_ros {
 namespace {
@@ -147,9 +119,9 @@ LaserScanToPointCloudWithIntensities(const LaserMessageType& msg) {
       const float first_echo = GetFirstEcho(echoes);
       if (msg.range_min <= first_echo && first_echo <= msg.range_max) {
         const Eigen::AngleAxisf rotation(angle, Eigen::Vector3f::UnitZ());
-        const cartographer::sensor::TimedRangefinderPoint point{
-            rotation * (first_echo * Eigen::Vector3f::UnitX()),
-            i * msg.time_increment};
+        Eigen::Vector4f point;
+        point << rotation * (first_echo * Eigen::Vector3f::UnitX()),
+            i * msg.time_increment;
         point_cloud.points.push_back(point);
         if (msg.intensities.size() > 0) {
           CHECK_EQ(msg.intensities.size(), msg.ranges.size());
@@ -165,10 +137,10 @@ LaserScanToPointCloudWithIntensities(const LaserMessageType& msg) {
   }
   ::cartographer::common::Time timestamp = FromRos(msg.header.stamp);
   if (!point_cloud.points.empty()) {
-    const double duration = point_cloud.points.back().time;
+    const double duration = point_cloud.points.back()[3];
     timestamp += cartographer::common::FromSeconds(duration);
-    for (auto& point : point_cloud.points) {
-      point.time -= duration;
+    for (Eigen::Vector4f& point : point_cloud.points) {
+      point[3] -= duration;
     }
   }
   return std::make_tuple(point_cloud, timestamp);
@@ -191,10 +163,10 @@ sensor_msgs::PointCloud2 ToPointCloud2Message(
     const ::cartographer::sensor::TimedPointCloud& point_cloud) {
   auto msg = PreparePointCloud2Message(timestamp, frame_id, point_cloud.size());
   ::ros::serialization::OStream stream(msg.data.data(), msg.data.size());
-  for (const cartographer::sensor::TimedRangefinderPoint& point : point_cloud) {
-    stream.next(point.position.x());
-    stream.next(point.position.y());
-    stream.next(point.position.z());
+  for (const Eigen::Vector4f& point : point_cloud) {
+    stream.next(point.x());
+    stream.next(point.y());
+    stream.next(point.z());
     stream.next(kPointCloudComponentFourMagic);
   }
   return msg;
@@ -214,74 +186,35 @@ ToPointCloudWithIntensities(const sensor_msgs::MultiEchoLaserScan& msg) {
 
 std::tuple<::cartographer::sensor::PointCloudWithIntensities,
            ::cartographer::common::Time>
-ToPointCloudWithIntensities(const sensor_msgs::PointCloud2& msg) {
+ToPointCloudWithIntensities(const sensor_msgs::PointCloud2& message) {
   PointCloudWithIntensities point_cloud;
   // We check for intensity field here to avoid run-time warnings if we pass in
   // a PointCloud2 without intensity.
-  if (PointCloud2HasField(msg, "intensity")) {
-    if (PointCloud2HasField(msg, "time")) {
-      pcl::PointCloud<PointXYZIT> pcl_point_cloud;
-      pcl::fromROSMsg(msg, pcl_point_cloud);
-      point_cloud.points.reserve(pcl_point_cloud.size());
-      point_cloud.intensities.reserve(pcl_point_cloud.size());
-      for (const auto& point : pcl_point_cloud) {
-        point_cloud.points.push_back(
-            {Eigen::Vector3f{point.x, point.y, point.z}, point.time});
-        point_cloud.intensities.push_back(point.intensity);
-      }
-    } else {
-      pcl::PointCloud<pcl::PointXYZI> pcl_point_cloud;
-      pcl::fromROSMsg(msg, pcl_point_cloud);
-      point_cloud.points.reserve(pcl_point_cloud.size());
-      point_cloud.intensities.reserve(pcl_point_cloud.size());
-      for (const auto& point : pcl_point_cloud) {
-        point_cloud.points.push_back(
-            {Eigen::Vector3f{point.x, point.y, point.z}, 0.f});
-        point_cloud.intensities.push_back(point.intensity);
-      }
+  if (PointCloud2HasField(message, "intensity")) {
+    pcl::PointCloud<pcl::PointXYZI> pcl_point_cloud;
+    pcl::fromROSMsg(message, pcl_point_cloud);
+    for (const auto& point : pcl_point_cloud) {
+      point_cloud.points.emplace_back(point.x, point.y, point.z, 0.f);
+      point_cloud.intensities.push_back(point.intensity);
     }
   } else {
-    // If we don't have an intensity field, just copy XYZ and fill in 1.0f.
-    if (PointCloud2HasField(msg, "time")) {
-      pcl::PointCloud<PointXYZT> pcl_point_cloud;
-      pcl::fromROSMsg(msg, pcl_point_cloud);
-      point_cloud.points.reserve(pcl_point_cloud.size());
-      point_cloud.intensities.reserve(pcl_point_cloud.size());
-      for (const auto& point : pcl_point_cloud) {
-        point_cloud.points.push_back(
-            {Eigen::Vector3f{point.x, point.y, point.z}, point.time});
-        point_cloud.intensities.push_back(1.0f);
-      }
-    } else {
-      pcl::PointCloud<pcl::PointXYZ> pcl_point_cloud;
-      pcl::fromROSMsg(msg, pcl_point_cloud);
-      point_cloud.points.reserve(pcl_point_cloud.size());
-      point_cloud.intensities.reserve(pcl_point_cloud.size());
-      for (const auto& point : pcl_point_cloud) {
-        point_cloud.points.push_back(
-            {Eigen::Vector3f{point.x, point.y, point.z}, 0.f});
-        point_cloud.intensities.push_back(1.0f);
-      }
+    pcl::PointCloud<pcl::PointXYZ> pcl_point_cloud;
+    pcl::fromROSMsg(message, pcl_point_cloud);
+
+    // If we don't have an intensity field, just copy XYZ and fill in
+    // 1.0.
+    for (const auto& point : pcl_point_cloud) {
+      point_cloud.points.emplace_back(point.x, point.y, point.z, 0.f);
+      point_cloud.intensities.push_back(1.0);
     }
   }
-  ::cartographer::common::Time timestamp = FromRos(msg.header.stamp);
-  if (!point_cloud.points.empty()) {
-    const double duration = point_cloud.points.back().time;
-    timestamp += cartographer::common::FromSeconds(duration);
-    for (auto& point : point_cloud.points) {
-      point.time -= duration;
-      CHECK_LE(point.time, 0.f)
-          << "Encountered a point with a larger stamp than "
-             "the last point in the cloud.";
-    }
-  }
-  return std::make_tuple(point_cloud, timestamp);
+  return std::make_tuple(point_cloud, FromRos(message.header.stamp));
 }
 
 LandmarkData ToLandmarkData(const LandmarkList& landmark_list) {
   LandmarkData landmark_data;
   landmark_data.time = FromRos(landmark_list.header.stamp);
-  for (const LandmarkEntry& entry : landmark_list.landmarks) {
+  for (const LandmarkEntry& entry : landmark_list.landmark) {
     landmark_data.landmark_observations.push_back(
         {entry.id, ToRigid3d(entry.tracking_from_landmark_transform),
          entry.translation_weight, entry.rotation_weight});
@@ -330,6 +263,17 @@ geometry_msgs::Pose ToGeometryMsgPose(const Rigid3d& rigid3d) {
   return pose;
 }
 
+geometry_msgs::PoseStamped ToGeometryMsgPose(
+    const geometry_msgs::TransformStamped& transform) {
+  geometry_msgs::PoseStamped pose;
+  pose.header = transform.header;
+  pose.pose.position.x = transform.transform.translation.x;
+  pose.pose.position.y = transform.transform.translation.y;
+  pose.pose.position.z = transform.transform.translation.z;
+  pose.pose.orientation = transform.transform.rotation;
+  return pose;
+}
+
 geometry_msgs::Point ToGeometryMsgPoint(const Eigen::Vector3d& vector3d) {
   geometry_msgs::Point point;
   point.x = vector3d.x();
@@ -374,11 +318,13 @@ std::unique_ptr<nav_msgs::OccupancyGrid> CreateOccupancyGridMsg(
     const cartographer::io::PaintSubmapSlicesResult& painted_slices,
     const double resolution, const std::string& frame_id,
     const ros::Time& time) {
-  auto occupancy_grid = absl::make_unique<nav_msgs::OccupancyGrid>();
+  auto occupancy_grid =
+      ::cartographer::common::make_unique<nav_msgs::OccupancyGrid>();
 
   const int width = cairo_image_surface_get_width(painted_slices.surface.get());
   const int height =
       cairo_image_surface_get_height(painted_slices.surface.get());
+  const ros::Time now = ros::Time::now();
 
   occupancy_grid->header.stamp = time;
   occupancy_grid->header.frame_id = frame_id;
@@ -415,6 +361,42 @@ std::unique_ptr<nav_msgs::OccupancyGrid> CreateOccupancyGridMsg(
   }
 
   return occupancy_grid;
+}
+
+geometry_msgs::Pose ComputeRelativePose(
+    const geometry_msgs::Pose& pose1,
+    const geometry_msgs::Pose& pose2) {
+  geometry_msgs::Pose pose;
+  pose.position.x = pose2.position.x - pose1.position.x;
+  pose.position.y = pose2.position.y - pose1.position.y;
+  pose.position.z = pose2.position.z - pose1.position.z;
+  geometry_msgs::Quaternion quat1 = pose1.orientation;
+  geometry_msgs::Quaternion quat2 = pose2.orientation;
+  tf2::Quaternion q1(quat1.x, quat1.y, quat1.z, quat1.w);
+  tf2::Quaternion q2(quat2.x, quat2.y, quat2.z, quat2.w);
+  tf2::Quaternion q = q2*q1.inverse();
+  pose.orientation.x = q.x();
+  pose.orientation.y = q.y();
+  pose.orientation.z = q.z();
+  pose.orientation.w = q.w();
+  return pose;
+}
+
+double GetYaw(const geometry_msgs::Quaternion& quat) {
+  tf2::Quaternion q(quat.x, quat.y, quat.z, quat.w);
+  tf2::Matrix3x3 R(q);
+  double r, p, y;
+  R.getRPY(r, p, y);
+  return y;
+}
+
+geometry_msgs::Quaternion QuatFromYaw(const double& yaw) {
+  geometry_msgs::Quaternion quat;
+  quat.x = 0.0;
+  quat.y = 0.0;
+  quat.z = sin(yaw/2.0);
+  quat.w = cos(yaw/2.0);
+  return quat;
 }
 
 }  // namespace cartographer_ros

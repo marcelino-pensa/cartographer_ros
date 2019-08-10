@@ -17,6 +17,7 @@
 #ifndef CARTOGRAPHER_ROS_CARTOGRAPHER_ROS_MSG_CONVERSION_H
 #define CARTOGRAPHER_ROS_CARTOGRAPHER_ROS_MSG_CONVERSION_H
 
+#include "cartographer/common/port.h"
 #include "cartographer/common/time.h"
 #include "cartographer/io/submap_painter.h"
 #include "cartographer/sensor/landmark_data.h"
@@ -24,9 +25,13 @@
 #include "cartographer/transform/rigid_transform.h"
 #include "cartographer_ros_msgs/LandmarkList.h"
 #include "geometry_msgs/Pose.h"
+#include "geometry_msgs/PoseStamped.h"
 #include "geometry_msgs/Transform.h"
 #include "geometry_msgs/TransformStamped.h"
 #include "nav_msgs/OccupancyGrid.h"
+#include "pcl/point_cloud.h"
+#include "pcl/point_types.h"
+#include "pcl_conversions/pcl_conversions.h"
 #include "sensor_msgs/Imu.h"
 #include "sensor_msgs/LaserScan.h"
 #include "sensor_msgs/MultiEchoLaserScan.h"
@@ -44,6 +49,9 @@ geometry_msgs::Transform ToGeometryMsgTransform(
 geometry_msgs::Pose ToGeometryMsgPose(
     const ::cartographer::transform::Rigid3d& rigid3d);
 
+geometry_msgs::PoseStamped ToGeometryMsgPose(
+    const geometry_msgs::TransformStamped& transform);
+
 geometry_msgs::Point ToGeometryMsgPoint(const Eigen::Vector3d& vector3d);
 
 // Converts ROS message to point cloud. Returns the time when the last point
@@ -59,7 +67,7 @@ ToPointCloudWithIntensities(const sensor_msgs::MultiEchoLaserScan& msg);
 
 std::tuple<::cartographer::sensor::PointCloudWithIntensities,
            ::cartographer::common::Time>
-ToPointCloudWithIntensities(const sensor_msgs::PointCloud2& msg);
+ToPointCloudWithIntensities(const sensor_msgs::PointCloud2& message);
 
 ::cartographer::sensor::LandmarkData ToLandmarkData(
     const cartographer_ros_msgs::LandmarkList& landmark_list);
@@ -88,6 +96,14 @@ std::unique_ptr<nav_msgs::OccupancyGrid> CreateOccupancyGridMsg(
     const cartographer::io::PaintSubmapSlicesResult& painted_slices,
     const double resolution, const std::string& frame_id,
     const ros::Time& time);
+
+geometry_msgs::Pose ComputeRelativePose(
+    const geometry_msgs::Pose& pose1,
+    const geometry_msgs::Pose& pose2);
+
+double GetYaw(const geometry_msgs::Quaternion& quat);
+
+geometry_msgs::Quaternion QuatFromYaw(const double& yaw);
 
 }  // namespace cartographer_ros
 
