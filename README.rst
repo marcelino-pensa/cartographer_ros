@@ -58,3 +58,10 @@ at `our Contribution page`_.
      :scale: 100%
      :target: https://github.com/googlecartographer/cartographer_ros/blob/master/LICENSE
 
+Installing
+============
+Installation.md
+
+* Install our cartographer by following the guidelines in `here`_.
+
+.. _here: https://github.com/marcelino-pensa/cartographer_ros/blob/master/Installation.md
