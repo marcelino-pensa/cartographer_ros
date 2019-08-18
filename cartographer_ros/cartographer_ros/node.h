@@ -48,7 +48,9 @@
 #include "sensor_msgs/MultiEchoLaserScan.h"
 #include "sensor_msgs/NavSatFix.h"
 #include "sensor_msgs/PointCloud2.h"
+#include "geometry_msgs/PoseStamped.h"
 #include "tf2_ros/transform_broadcaster.h"
+#include "std_srvs/Trigger.h"
 
 namespace cartographer_ros {
 
@@ -57,7 +59,7 @@ class Node {
  public:
   Node(const NodeOptions& node_options,
        std::unique_ptr<cartographer::mapping::MapBuilderInterface> map_builder,
-       tf2_ros::Buffer* tf_buffer);
+       tf2_ros::Buffer* tf_buffer, bool start_mapping = true);
   ~Node();
 
   Node(const Node&) = delete;
@@ -114,6 +116,8 @@ class Node {
   // Loads a serialized SLAM state from a .pbstream file.
   void LoadState(const std::string& state_filename, bool load_frozen_state);
 
+  bool TerminateMap() { return terminate_map_;}
+
   ::ros::NodeHandle* node_handle();
 
  private:
@@ -138,6 +142,13 @@ class Node {
       cartographer_ros_msgs::FinishTrajectory::Response& response);
   bool HandleWriteState(cartographer_ros_msgs::WriteState::Request& request,
                         cartographer_ros_msgs::WriteState::Response& response);
+
+  // Triggers to start/stop mapping
+  bool StopMappingService(std_srvs::Trigger::Request  &req,
+                          std_srvs::Trigger::Response &res);
+  bool StartNewMapService(std_srvs::Trigger::Request  &req,
+                          std_srvs::Trigger::Response &res);
+
   // Returns the set of SensorIds expected for a trajectory.
   // 'SensorId::id' is the expected ROS topic name.
   std::set<::cartographer::mapping::TrajectoryBuilderInterface::SensorId>
@@ -175,6 +186,9 @@ class Node {
   ::ros::Publisher trajectory_node_list_publisher_;
   ::ros::Publisher landmark_poses_list_publisher_;
   ::ros::Publisher constraint_list_publisher_;
+  ::ros::Publisher odom_from_start_publisher_;
+  ::ros::Publisher odom_drift_publisher_;
+
   // These ros::ServiceServers need to live for the lifetime of the node.
   std::vector<::ros::ServiceServer> service_servers_;
   ::ros::Publisher scan_matched_point_cloud_publisher_;
@@ -208,6 +222,14 @@ class Node {
   // We have to keep the timer handles of ::ros::WallTimers around, otherwise
   // they do not fire.
   std::vector<::ros::WallTimer> wall_timers_;
+
+  // Bool for terminating mapping
+  bool terminate_map_;
+  bool start_map_;
+
+  // Save first odometry information
+  nav_msgs::Odometry first_odom_;
+  geometry_msgs::TransformStamped cartographer_estimated_pose_;
 };
 
 }  // namespace cartographer_ros

@@ -25,6 +25,7 @@
 #include "cartographer/transform/rigid_transform.h"
 #include "cartographer_ros_msgs/LandmarkList.h"
 #include "geometry_msgs/Pose.h"
+#include "geometry_msgs/PoseStamped.h"
 #include "geometry_msgs/Transform.h"
 #include "geometry_msgs/TransformStamped.h"
 #include "nav_msgs/OccupancyGrid.h"
@@ -47,6 +48,9 @@ geometry_msgs::Transform ToGeometryMsgTransform(
 
 geometry_msgs::Pose ToGeometryMsgPose(
     const ::cartographer::transform::Rigid3d& rigid3d);
+
+geometry_msgs::PoseStamped ToGeometryMsgPose(
+    const geometry_msgs::TransformStamped& transform);
 
 geometry_msgs::Point ToGeometryMsgPoint(const Eigen::Vector3d& vector3d);
 
@@ -92,6 +96,14 @@ std::unique_ptr<nav_msgs::OccupancyGrid> CreateOccupancyGridMsg(
     const cartographer::io::PaintSubmapSlicesResult& painted_slices,
     const double resolution, const std::string& frame_id,
     const ros::Time& time);
+
+geometry_msgs::Pose ComputeRelativePose(
+    const geometry_msgs::Pose& pose1,
+    const geometry_msgs::Pose& pose2);
+
+double GetYaw(const geometry_msgs::Quaternion& quat);
+
+geometry_msgs::Quaternion QuatFromYaw(const double& yaw);
 
 }  // namespace cartographer_ros
 

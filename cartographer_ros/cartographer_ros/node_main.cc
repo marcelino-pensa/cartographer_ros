@@ -43,7 +43,7 @@ DEFINE_string(
 namespace cartographer_ros {
 namespace {
 
-void Run() {
+void StartNewMap(const bool &start_map) {
   constexpr double kTfBufferCacheTimeInSeconds = 10.;
   tf2_ros::Buffer tf_buffer{::ros::Duration(kTfBufferCacheTimeInSeconds)};
   tf2_ros::TransformListener tf(tf_buffer);
@@ -55,7 +55,7 @@ void Run() {
   auto map_builder =
       cartographer::common::make_unique<cartographer::mapping::MapBuilder>(
           node_options.map_builder_options);
-  Node node(node_options, std::move(map_builder), &tf_buffer);
+  Node node(node_options, std::move(map_builder), &tf_buffer, start_map);
   if (!FLAGS_load_state_filename.empty()) {
     node.LoadState(FLAGS_load_state_filename, FLAGS_load_frozen_state);
   }
@@ -64,7 +64,17 @@ void Run() {
     node.StartTrajectoryWithDefaultTopics(trajectory_options);
   }
 
-  ::ros::spin();
+  ::ros::Rate rate(100);
+  while(::ros::ok()) {
+    ::ros::spinOnce();
+    
+    // Check if mapping needs to stop
+    if (node.TerminateMap()) {
+      break;
+    }
+
+    rate.sleep();
+  }
 
   node.FinishAllTrajectories();
   node.RunFinalOptimization();
@@ -74,8 +84,22 @@ void Run() {
   }
 }
 
+void Run(const bool start_mapping) {
+  bool start_map = start_mapping;
+  while(::ros::ok()) {
+
+    // The function below blocks until it finishes mapping
+    StartNewMap(start_map);
+
+    // We don't start mapping the next time until a service request
+    start_map = false;
+  }
+
+}
+
 }  // namespace
 }  // namespace cartographer_ros
+
 
 int main(int argc, char** argv) {
   google::InitGoogleLogging(argv[0]);
@@ -90,6 +114,7 @@ int main(int argc, char** argv) {
   ::ros::start();
 
   cartographer_ros::ScopedRosLogSink ros_log_sink;
-  cartographer_ros::Run();
+  cartographer_ros::Run(true);
+
   ::ros::shutdown();
 }

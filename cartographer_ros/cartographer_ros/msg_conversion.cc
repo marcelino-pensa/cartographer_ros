@@ -26,6 +26,7 @@
 #include "cartographer/transform/transform.h"
 #include "cartographer_ros/time_conversion.h"
 #include "geometry_msgs/Pose.h"
+#include "geometry_msgs/PoseStamped.h"
 #include "geometry_msgs/Quaternion.h"
 #include "geometry_msgs/Transform.h"
 #include "geometry_msgs/TransformStamped.h"
@@ -38,6 +39,8 @@
 #include "sensor_msgs/LaserScan.h"
 #include "sensor_msgs/MultiEchoLaserScan.h"
 #include "sensor_msgs/PointCloud2.h"
+#include "tf2_ros/transform_broadcaster.h"
+#include "tf2/LinearMath/Matrix3x3.h"
 
 namespace cartographer_ros {
 namespace {
@@ -260,6 +263,17 @@ geometry_msgs::Pose ToGeometryMsgPose(const Rigid3d& rigid3d) {
   return pose;
 }
 
+geometry_msgs::PoseStamped ToGeometryMsgPose(
+    const geometry_msgs::TransformStamped& transform) {
+  geometry_msgs::PoseStamped pose;
+  pose.header = transform.header;
+  pose.pose.position.x = transform.transform.translation.x;
+  pose.pose.position.y = transform.transform.translation.y;
+  pose.pose.position.z = transform.transform.translation.z;
+  pose.pose.orientation = transform.transform.rotation;
+  return pose;
+}
+
 geometry_msgs::Point ToGeometryMsgPoint(const Eigen::Vector3d& vector3d) {
   geometry_msgs::Point point;
   point.x = vector3d.x();
@@ -347,6 +361,42 @@ std::unique_ptr<nav_msgs::OccupancyGrid> CreateOccupancyGridMsg(
   }
 
   return occupancy_grid;
+}
+
+geometry_msgs::Pose ComputeRelativePose(
+    const geometry_msgs::Pose& pose1,
+    const geometry_msgs::Pose& pose2) {
+  geometry_msgs::Pose pose;
+  pose.position.x = pose2.position.x - pose1.position.x;
+  pose.position.y = pose2.position.y - pose1.position.y;
+  pose.position.z = pose2.position.z - pose1.position.z;
+  geometry_msgs::Quaternion quat1 = pose1.orientation;
+  geometry_msgs::Quaternion quat2 = pose2.orientation;
+  tf2::Quaternion q1(quat1.x, quat1.y, quat1.z, quat1.w);
+  tf2::Quaternion q2(quat2.x, quat2.y, quat2.z, quat2.w);
+  tf2::Quaternion q = q2*q1.inverse();
+  pose.orientation.x = q.x();
+  pose.orientation.y = q.y();
+  pose.orientation.z = q.z();
+  pose.orientation.w = q.w();
+  return pose;
+}
+
+double GetYaw(const geometry_msgs::Quaternion& quat) {
+  tf2::Quaternion q(quat.x, quat.y, quat.z, quat.w);
+  tf2::Matrix3x3 R(q);
+  double r, p, y;
+  R.getRPY(r, p, y);
+  return y;
+}
+
+geometry_msgs::Quaternion QuatFromYaw(const double& yaw) {
+  geometry_msgs::Quaternion quat;
+  quat.x = 0.0;
+  quat.y = 0.0;
+  quat.z = sin(yaw/2.0);
+  quat.w = cos(yaw/2.0);
+  return quat;
 }
 
 }  // namespace cartographer_ros

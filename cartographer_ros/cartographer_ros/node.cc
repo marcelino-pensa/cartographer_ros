@@ -85,9 +85,22 @@ using carto::transform::Rigid3d;
 Node::Node(
     const NodeOptions& node_options,
     std::unique_ptr<cartographer::mapping::MapBuilderInterface> map_builder,
-    tf2_ros::Buffer* const tf_buffer)
+    tf2_ros::Buffer* const tf_buffer, bool start_mapping)
     : node_options_(node_options),
       map_builder_bridge_(node_options_, std::move(map_builder), tf_buffer) {
+  start_map_ = start_mapping;
+
+  // Wait until we should start mapping
+  service_servers_.push_back(node_handle_.advertiseService(
+      kStartMappingServiceName, &Node::StartNewMapService, this));
+  while(true) {
+    if (start_map_ == true) {
+      break;
+    }
+    ::ros::spinOnce();
+    ::ros::Duration(0.1).sleep();
+  }
+
   carto::common::MutexLocker lock(&mutex_);
   submap_list_publisher_ =
       node_handle_.advertise<::cartographer_ros_msgs::SubmapList>(
@@ -101,6 +114,13 @@ Node::Node(
   constraint_list_publisher_ =
       node_handle_.advertise<::visualization_msgs::MarkerArray>(
           kConstraintListTopic, kLatestOnlyPublisherQueueSize);
+  odom_from_start_publisher_ = 
+      node_handle_.advertise<::geometry_msgs::PoseStamped>(
+          kOdomFromStartTopic, kLatestOnlyPublisherQueueSize);
+  odom_drift_publisher_ = 
+      node_handle_.advertise<::geometry_msgs::PoseStamped>(
+          kOdomDriftTopic, kLatestOnlyPublisherQueueSize);
+
   service_servers_.push_back(node_handle_.advertiseService(
       kSubmapQueryServiceName, &Node::HandleSubmapQuery, this));
   service_servers_.push_back(node_handle_.advertiseService(
@@ -109,6 +129,8 @@ Node::Node(
       kFinishTrajectoryServiceName, &Node::HandleFinishTrajectory, this));
   service_servers_.push_back(node_handle_.advertiseService(
       kWriteStateServiceName, &Node::HandleWriteState, this));
+  service_servers_.push_back(node_handle_.advertiseService(
+      kStopMappingServiceName, &Node::StopMappingService, this));
 
   scan_matched_point_cloud_publisher_ =
       node_handle_.advertise<sensor_msgs::PointCloud2>(
@@ -129,6 +151,8 @@ Node::Node(
   wall_timers_.push_back(node_handle_.createWallTimer(
       ::ros::WallDuration(kConstraintPublishPeriodSec),
       &Node::PublishConstraintList, this));
+
+  terminate_map_ = false;
 }
 
 Node::~Node() { FinishAllTrajectories(); }
@@ -178,6 +202,7 @@ void Node::AddSensorSamplers(const int trajectory_id,
 
 void Node::PublishTrajectoryStates(const ::ros::WallTimerEvent& timer_event) {
   carto::common::MutexLocker lock(&mutex_);
+  // uint count = 0;
   for (const auto& entry : map_builder_bridge_.GetTrajectoryStates()) {
     const auto& trajectory_state = entry.second;
 
@@ -248,6 +273,8 @@ void Node::PublishTrajectoryStates(const ::ros::WallTimerEvent& timer_event) {
         stamped_transforms.push_back(stamped_transform);
 
         tf_broadcaster_.sendTransform(stamped_transforms);
+        // cartographer_estimated_pose_ = ToGeometryMsgTransform(tracking_to_map);
+        // std::cout << stamped_transform.child_frame_id << " " << count++ << std::endl;
       } else {
         stamped_transform.header.frame_id = node_options_.map_frame;
         stamped_transform.child_frame_id =
@@ -255,6 +282,8 @@ void Node::PublishTrajectoryStates(const ::ros::WallTimerEvent& timer_event) {
         stamped_transform.transform = ToGeometryMsgTransform(
             tracking_to_map * (*trajectory_state.published_to_tracking));
         tf_broadcaster_.sendTransform(stamped_transform);
+        cartographer_estimated_pose_ = stamped_transform;
+        // std::cout << stamped_transform.child_frame_id << " " << count++ << std::endl;
       }
     }
   }
@@ -576,6 +605,20 @@ bool Node::HandleWriteState(
   return true;
 }
 
+bool Node::StopMappingService(std_srvs::Trigger::Request  &req,
+                              std_srvs::Trigger::Response &res) {
+  ROS_INFO("[cartographer] Stopping map!");
+  terminate_map_ = true;
+  return true;
+}
+
+bool Node::StartNewMapService(std_srvs::Trigger::Request  &req,
+                              std_srvs::Trigger::Response &res) {
+  ROS_INFO("[cartographer] Starting new map!");
+  start_map_ = true;
+  return true;
+}
+
 void Node::FinishAllTrajectories() {
   carto::common::MutexLocker lock(&mutex_);
   for (auto& entry : is_active_trajectory_) {
@@ -612,12 +655,43 @@ void Node::HandleOdometryMessage(const int trajectory_id,
   if (!sensor_samplers_.at(trajectory_id).odometry_sampler.Pulse()) {
     return;
   }
+
   auto sensor_bridge_ptr = map_builder_bridge_.sensor_bridge(trajectory_id);
   auto odometry_data_ptr = sensor_bridge_ptr->ToOdometryData(msg);
   if (odometry_data_ptr != nullptr) {
     extrapolators_.at(trajectory_id).AddOdometryData(*odometry_data_ptr);
   }
   sensor_bridge_ptr->HandleOdometryMessage(sensor_id, msg);
+
+  // Save odometry data if this is the first one received
+  if (first_odom_.header.stamp.toSec() == 0) {
+    first_odom_ = *msg;
+  }
+
+  // Compute how much odometry has shifted since start
+  geometry_msgs::PoseStamped odom_pose_from_start;
+  odom_pose_from_start.pose = msg->pose.pose;
+  odom_pose_from_start.header = msg->header;
+  odom_pose_from_start.header.frame_id = node_options_.map_frame;
+  odom_pose_from_start.pose = ComputeRelativePose(first_odom_.pose.pose, msg->pose.pose);
+  odom_from_start_publisher_.publish(odom_pose_from_start);
+  
+  if (cartographer_estimated_pose_.header.stamp.toSec() != 0) {
+    // Compute how much odom has shifted w.r.t. cartographer
+    geometry_msgs::PoseStamped est_pose = ToGeometryMsgPose(cartographer_estimated_pose_);
+    geometry_msgs::PoseStamped odom_drift, odom_drift_xy;
+    odom_drift.pose = ComputeRelativePose(est_pose.pose, odom_pose_from_start.pose);
+    double yaw = GetYaw(odom_drift.pose.orientation);
+
+    // Compute error in XY frame
+    odom_drift_xy.pose = odom_drift.pose;
+    odom_drift_xy.pose.position.z = 0.0;
+    odom_drift_xy.pose.orientation = QuatFromYaw(yaw);
+    odom_drift_xy.header = cartographer_estimated_pose_.header;
+    odom_drift_xy.header.frame_id = cartographer_estimated_pose_.child_frame_id;
+    odom_drift_publisher_.publish(odom_drift_xy);
+  }
+  
 }
 
 void Node::HandleNavSatFixMessage(const int trajectory_id,

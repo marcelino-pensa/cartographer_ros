@@ -37,9 +37,13 @@ constexpr char kSubmapListTopic[] = "submap_list";
 constexpr char kSubmapQueryServiceName[] = "submap_query";
 constexpr char kStartTrajectoryServiceName[] = "start_trajectory";
 constexpr char kWriteStateServiceName[] = "write_state";
+constexpr char kStopMappingServiceName[] = "finish_map";
+constexpr char kStartMappingServiceName[] = "start_mapping";
 constexpr char kTrajectoryNodeListTopic[] = "trajectory_node_list";
 constexpr char kLandmarkPosesListTopic[] = "landmark_poses_list";
 constexpr char kConstraintListTopic[] = "constraint_list";
+constexpr char kOdomFromStartTopic[] = "odom_from_start";
+constexpr char kOdomDriftTopic[] = "odom_xy_yaw_drift";
 constexpr double kConstraintPublishPeriodSec = 0.5;
 
 constexpr int kInfiniteSubscriberQueueSize = 0;
