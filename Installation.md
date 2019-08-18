@@ -13,7 +13,6 @@ wstool init src
 Clone repositories:
 
 ```
-https://github.com/marcelino-pensa/cartographer_ros/blob/master/Installation.md
 git clone https://github.com/googlecartographer/cartographer.git
 git clone https://github.com/marcelino-pensa/cartographer_ros.git
 git clone https://ceres-solver.googlesource.com/ceres-solver.git
@@ -26,6 +25,8 @@ cd cartographer
 git checkout 1.0.0
 cd ../ceres-solver
 git checkout 1.13.0
+cd ../cartographer_ros
+git checkout pensa-branch
 cd ../..
 ```
 
