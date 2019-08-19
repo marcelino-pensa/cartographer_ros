@@ -60,8 +60,15 @@ at `our Contribution page`_.
 
 Installing
 ============
-Installation.md
 
 * Install our cartographer by following the guidelines in `here`_.
 
 .. _here: https://github.com/marcelino-pensa/cartographer_ros/blob/master/Installation.md
+
+
+Bag examples
+============
+
+* Run some examples following the guidelines in `here`_.
+
+.. _here: https://github.com/marcelino-pensa/cartographer_ros/blob/master/Examples.md
