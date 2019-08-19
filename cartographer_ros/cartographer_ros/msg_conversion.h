@@ -97,9 +97,15 @@ std::unique_ptr<nav_msgs::OccupancyGrid> CreateOccupancyGridMsg(
     const double resolution, const std::string& frame_id,
     const ros::Time& time);
 
+geometry_msgs::Pose ComposePoses(
+    const geometry_msgs::Pose& pose1,
+    const geometry_msgs::Pose& pose2);
+
 geometry_msgs::Pose ComputeRelativePose(
     const geometry_msgs::Pose& pose1,
     const geometry_msgs::Pose& pose2);
+
+geometry_msgs::Pose ZeroPose();
 
 double GetYaw(const geometry_msgs::Quaternion& quat);
 

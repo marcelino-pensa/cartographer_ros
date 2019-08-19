@@ -44,6 +44,7 @@ constexpr char kLandmarkPosesListTopic[] = "landmark_poses_list";
 constexpr char kConstraintListTopic[] = "constraint_list";
 constexpr char kOdomFromStartTopic[] = "odom_from_start";
 constexpr char kOdomDriftTopic[] = "odom_xy_yaw_drift";
+constexpr char kAccumulOdomDriftTopic[] = "accumul_odom_xy_yaw_drift";
 constexpr double kConstraintPublishPeriodSec = 0.5;
 
 constexpr int kInfiniteSubscriberQueueSize = 0;

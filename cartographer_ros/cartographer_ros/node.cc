@@ -85,21 +85,9 @@ using carto::transform::Rigid3d;
 Node::Node(
     const NodeOptions& node_options,
     std::unique_ptr<cartographer::mapping::MapBuilderInterface> map_builder,
-    tf2_ros::Buffer* const tf_buffer, bool start_mapping)
+    tf2_ros::Buffer* const tf_buffer)
     : node_options_(node_options),
       map_builder_bridge_(node_options_, std::move(map_builder), tf_buffer) {
-  start_map_ = start_mapping;
-
-  // Wait until we should start mapping
-  service_servers_.push_back(node_handle_.advertiseService(
-      kStartMappingServiceName, &Node::StartNewMapService, this));
-  while(true) {
-    if (start_map_ == true) {
-      break;
-    }
-    ::ros::spinOnce();
-    ::ros::Duration(0.1).sleep();
-  }
 
   carto::common::MutexLocker lock(&mutex_);
   submap_list_publisher_ =
@@ -117,9 +105,6 @@ Node::Node(
   odom_from_start_publisher_ = 
       node_handle_.advertise<::geometry_msgs::PoseStamped>(
           kOdomFromStartTopic, kLatestOnlyPublisherQueueSize);
-  odom_drift_publisher_ = 
-      node_handle_.advertise<::geometry_msgs::PoseStamped>(
-          kOdomDriftTopic, kLatestOnlyPublisherQueueSize);
 
   service_servers_.push_back(node_handle_.advertiseService(
       kSubmapQueryServiceName, &Node::HandleSubmapQuery, this));
@@ -129,8 +114,6 @@ Node::Node(
       kFinishTrajectoryServiceName, &Node::HandleFinishTrajectory, this));
   service_servers_.push_back(node_handle_.advertiseService(
       kWriteStateServiceName, &Node::HandleWriteState, this));
-  service_servers_.push_back(node_handle_.advertiseService(
-      kStopMappingServiceName, &Node::StopMappingService, this));
 
   scan_matched_point_cloud_publisher_ =
       node_handle_.advertise<sensor_msgs::PointCloud2>(
@@ -605,20 +588,6 @@ bool Node::HandleWriteState(
   return true;
 }
 
-bool Node::StopMappingService(std_srvs::Trigger::Request  &req,
-                              std_srvs::Trigger::Response &res) {
-  ROS_INFO("[cartographer] Stopping map!");
-  terminate_map_ = true;
-  return true;
-}
-
-bool Node::StartNewMapService(std_srvs::Trigger::Request  &req,
-                              std_srvs::Trigger::Response &res) {
-  ROS_INFO("[cartographer] Starting new map!");
-  start_map_ = true;
-  return true;
-}
-
 void Node::FinishAllTrajectories() {
   carto::common::MutexLocker lock(&mutex_);
   for (auto& entry : is_active_trajectory_) {
@@ -689,7 +658,9 @@ void Node::HandleOdometryMessage(const int trajectory_id,
     odom_drift_xy.pose.orientation = QuatFromYaw(yaw);
     odom_drift_xy.header = cartographer_estimated_pose_.header;
     odom_drift_xy.header.frame_id = cartographer_estimated_pose_.child_frame_id;
-    odom_drift_publisher_.publish(odom_drift_xy);
+    
+    // Save into class variable
+    odom_drift_xy_ = odom_drift_xy;
   }
   
 }

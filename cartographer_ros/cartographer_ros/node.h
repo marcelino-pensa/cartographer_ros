@@ -59,7 +59,7 @@ class Node {
  public:
   Node(const NodeOptions& node_options,
        std::unique_ptr<cartographer::mapping::MapBuilderInterface> map_builder,
-       tf2_ros::Buffer* tf_buffer, bool start_mapping = true);
+       tf2_ros::Buffer* tf_buffer);
   ~Node();
 
   Node(const Node&) = delete;
@@ -116,7 +116,8 @@ class Node {
   // Loads a serialized SLAM state from a .pbstream file.
   void LoadState(const std::string& state_filename, bool load_frozen_state);
 
-  bool TerminateMap() { return terminate_map_;}
+  // returns computed odom drift so far
+  geometry_msgs::PoseStamped GetOdomDrift() { return odom_drift_xy_;}
 
   ::ros::NodeHandle* node_handle();
 
@@ -142,12 +143,6 @@ class Node {
       cartographer_ros_msgs::FinishTrajectory::Response& response);
   bool HandleWriteState(cartographer_ros_msgs::WriteState::Request& request,
                         cartographer_ros_msgs::WriteState::Response& response);
-
-  // Triggers to start/stop mapping
-  bool StopMappingService(std_srvs::Trigger::Request  &req,
-                          std_srvs::Trigger::Response &res);
-  bool StartNewMapService(std_srvs::Trigger::Request  &req,
-                          std_srvs::Trigger::Response &res);
 
   // Returns the set of SensorIds expected for a trajectory.
   // 'SensorId::id' is the expected ROS topic name.
@@ -187,7 +182,6 @@ class Node {
   ::ros::Publisher landmark_poses_list_publisher_;
   ::ros::Publisher constraint_list_publisher_;
   ::ros::Publisher odom_from_start_publisher_;
-  ::ros::Publisher odom_drift_publisher_;
 
   // These ros::ServiceServers need to live for the lifetime of the node.
   std::vector<::ros::ServiceServer> service_servers_;
@@ -225,11 +219,11 @@ class Node {
 
   // Bool for terminating mapping
   bool terminate_map_;
-  bool start_map_;
 
   // Save first odometry information
   nav_msgs::Odometry first_odom_;
   geometry_msgs::TransformStamped cartographer_estimated_pose_;
+  geometry_msgs::PoseStamped odom_drift_xy_;
 };
 
 }  // namespace cartographer_ros

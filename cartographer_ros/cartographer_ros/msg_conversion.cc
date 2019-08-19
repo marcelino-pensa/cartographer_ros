@@ -363,6 +363,25 @@ std::unique_ptr<nav_msgs::OccupancyGrid> CreateOccupancyGridMsg(
   return occupancy_grid;
 }
 
+geometry_msgs::Pose ComposePoses(
+    const geometry_msgs::Pose& pose1,
+    const geometry_msgs::Pose& pose2) {
+  geometry_msgs::Pose pose;
+  pose.position.x = pose2.position.x + pose1.position.x;
+  pose.position.y = pose2.position.y + pose1.position.y;
+  pose.position.z = pose2.position.z + pose1.position.z;
+  geometry_msgs::Quaternion quat1 = pose1.orientation;
+  geometry_msgs::Quaternion quat2 = pose2.orientation;
+  tf2::Quaternion q1(quat1.x, quat1.y, quat1.z, quat1.w);
+  tf2::Quaternion q2(quat2.x, quat2.y, quat2.z, quat2.w);
+  tf2::Quaternion q = q2*q1;
+  pose.orientation.x = q.x();
+  pose.orientation.y = q.y();
+  pose.orientation.z = q.z();
+  pose.orientation.w = q.w();
+  return pose;
+}
+
 geometry_msgs::Pose ComputeRelativePose(
     const geometry_msgs::Pose& pose1,
     const geometry_msgs::Pose& pose2) {
@@ -379,6 +398,18 @@ geometry_msgs::Pose ComputeRelativePose(
   pose.orientation.y = q.y();
   pose.orientation.z = q.z();
   pose.orientation.w = q.w();
+  return pose;
+}
+
+geometry_msgs::Pose ZeroPose() {
+  geometry_msgs::Pose pose;
+  pose.position.x = 0.0;
+  pose.position.y = 0.0;
+  pose.position.z = 0.0;
+  pose.orientation.x = 0.0;
+  pose.orientation.y = 0.0;
+  pose.orientation.z = 0.0;
+  pose.orientation.w = 1.0;
   return pose;
 }
 
