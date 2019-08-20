@@ -34,6 +34,8 @@
     <remap from="scan" to="/laser/scan" />
     <remap from="imu" to="/mavros/imu/data" />
     <remap from="odom" to="/vislam/odometry_body" />
+
+    <param name="/map_at_launch" value="true"/>
   </node>
 
   <node name="cartographer_occupancy_grid_node" pkg="cartographer_ros"

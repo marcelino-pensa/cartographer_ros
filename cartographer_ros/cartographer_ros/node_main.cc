@@ -44,7 +44,7 @@ DEFINE_string(
 namespace cartographer_ros {
 namespace {
 
-class MapClass {
+class MapServer {
  public:
   bool start_map_;
   bool terminate_map_;
@@ -53,8 +53,10 @@ class MapClass {
   ::geometry_msgs::PoseStamped accumul_odom_drift_;
   ::geometry_msgs::PoseStamped cur_odom_drift_;
 
-  MapClass(const bool &start_map) {
-    start_map_ = start_map;
+  MapServer() {
+    ::ros::NodeHandle node_handle("~");
+    // start_map_ = start_map;
+    node_handle.param("map_at_launch", start_map_, true);
     terminate_map_ = false;
     accumul_odom_drift_.pose = ZeroPose();
   }
@@ -138,14 +140,14 @@ class MapClass {
   }
 
   void Run() {
-    ::ros::NodeHandle node_handle_;
-    new_map_srv = node_handle_.advertiseService(
-        kStartMappingServiceName, &MapClass::StartNewMapService, this);
-    terminate_map_srv = node_handle_.advertiseService(
-        kStopMappingServiceName,  &MapClass::StopMappingService, this);
-    odom_drift_publisher_ = node_handle_.advertise<::geometry_msgs::PoseStamped>(
+    ::ros::NodeHandle node_handle;
+    new_map_srv = node_handle.advertiseService(
+        kStartMappingServiceName, &MapServer::StartNewMapService, this);
+    terminate_map_srv = node_handle.advertiseService(
+        kStopMappingServiceName,  &MapServer::StopMappingService, this);
+    odom_drift_publisher_ = node_handle.advertise<::geometry_msgs::PoseStamped>(
         kOdomDriftTopic, kLatestOnlyPublisherQueueSize);
-    accumul_odom_drift_publisher_ = node_handle_.advertise<::geometry_msgs::PoseStamped>(
+    accumul_odom_drift_publisher_ = node_handle.advertise<::geometry_msgs::PoseStamped>(
         kAccumulOdomDriftTopic, kLatestOnlyPublisherQueueSize);
 
     ::ros::Rate rate(100);
@@ -184,7 +186,7 @@ int main(int argc, char** argv) {
 
   cartographer_ros::ScopedRosLogSink ros_log_sink;
 
-  cartographer_ros::MapClass map_obj(true);
+  cartographer_ros::MapServer map_obj;
   map_obj.Run();
 
   // cartographer_ros::Run(true);
