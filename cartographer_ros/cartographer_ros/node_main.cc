@@ -19,6 +19,7 @@
 #include "cartographer_ros/node_options.h"
 #include "cartographer_ros/ros_log_sink.h"
 #include "cartographer_ros/msg_conversion.h"
+#include <cartographer_ros/tf_class.h>
 #include "gflags/gflags.h"
 #include "tf2_ros/transform_listener.h"
 
@@ -47,19 +48,76 @@ namespace {
 class MapServer {
  public:
   bool start_map_;
-  bool terminate_map_;
+  bool terminate_map_, terminate_thread_;
   ::ros::Publisher odom_drift_publisher_, accumul_odom_drift_publisher_;
   ::ros::ServiceServer new_map_srv, terminate_map_srv;
-  ::geometry_msgs::PoseStamped accumul_odom_drift_;
-  ::geometry_msgs::PoseStamped cur_odom_drift_;
+  ::geometry_msgs::TransformStamped accumul_odom_drift_;
+  ::geometry_msgs::PoseStamped cur_odom_drift_, cur_odom_drift_map_;
+  uint drift_estimation_rate_;
 
   MapServer() {
     ::ros::NodeHandle node_handle("~");
-    // start_map_ = start_map;
     node_handle.param("map_at_launch", start_map_, true);
     terminate_map_ = false;
-    accumul_odom_drift_.pose = ZeroPose();
+    terminate_thread_ = false;
+    accumul_odom_drift_.transform = ZeroTransform();
+    drift_estimation_rate_ = 100; // 100 hz
   }
+
+  ~MapServer() {
+
+  }
+
+  void TfTask(const std::string &frame_id, const std::string &child_frame_id) {
+    ROS_DEBUG("[cartographer_ros] tf Thread started with rate %f: ", drift_estimation_rate_);
+    tf_listener::TfClass obj_tf;
+    ros::Rate loop_rate(drift_estimation_rate_);
+    geometry_msgs::TransformStamped transform;
+    tf2_ros::TransformBroadcaster tf_broadcaster;
+    geometry_msgs::TransformStamped local_accumul_odom_drift;
+
+    ROS_INFO("[cartographer_ros]: tf task started for tf from %s to %s.",
+             frame_id.c_str(), child_frame_id.c_str());
+
+    // Variable initialization
+    accumul_odom_drift_.header.frame_id = frame_id;
+    accumul_odom_drift_.child_frame_id = child_frame_id;
+
+    while (!terminate_thread_ && ros::ok()) {
+        // Get the transforms
+        if(obj_tf.GetTransform(child_frame_id, frame_id)) {
+          transform = tf_to_tf2(obj_tf.transform_);
+
+          // Publish accumulated drift
+          local_accumul_odom_drift.transform = 
+            ComposeTransforms(accumul_odom_drift_.transform, transform.transform);
+          local_accumul_odom_drift.header.stamp = transform.header.stamp;
+          local_accumul_odom_drift.header.frame_id = frame_id;
+          local_accumul_odom_drift.child_frame_id = child_frame_id + "_drift";
+          // transform.header.frame_id = frame_id;
+          // transform.child_frame_id  = child_frame_id + "_drift";
+          tf_broadcaster.sendTransform(local_accumul_odom_drift);
+
+          // Convert into XY-only drift
+          local_accumul_odom_drift.transform.translation.z = 0.0;
+          local_accumul_odom_drift.transform.rotation = ZeroQuaternion();
+          local_accumul_odom_drift.header.frame_id = child_frame_id + "_corrected";
+          local_accumul_odom_drift.child_frame_id = child_frame_id;
+          accumul_odom_drift_publisher_.publish(local_accumul_odom_drift);
+
+          // Publish accumulated drift into cartographer's tf tree
+          // obj_tf.PrintTransform();
+        }
+
+        loop_rate.sleep();
+    }
+    // Update the accumulated drift pose
+    accumul_odom_drift_.transform = 
+            ComposeTransforms(accumul_odom_drift_.transform, transform.transform);
+    terminate_thread_ = false;
+
+    ROS_DEBUG("[cartographer_ros] Exiting tf Thread...");
+}
 
   bool StartNewMapService(std_srvs::Trigger::Request  &req,
                           std_srvs::Trigger::Response &res) {
@@ -72,6 +130,7 @@ class MapServer {
                           std_srvs::Trigger::Response &res) {
   ROS_INFO("[cartographer] Stopping map!");
   terminate_map_ = true;
+  terminate_thread_ = true;
   return true;
 }
 
@@ -100,31 +159,15 @@ class MapServer {
     ::ros::Rate rate(100);
     while(::ros::ok()) {
       ::ros::spinOnce();
-      
-      cur_odom_drift_ = node.GetOdomDrift();
 
       // Check if mapping needs to stop
       if (terminate_map_) {
         terminate_map_ = false;
 
-        // Update the accumulated odometry drift
-        accumul_odom_drift_.header = cur_odom_drift_.header;
-        accumul_odom_drift_.pose = 
-          ComposePoses(accumul_odom_drift_.pose, cur_odom_drift_.pose);
-
         // Break loop
         break;
       } else {
         if (cur_odom_drift_.header.stamp.toSec() != 0) {
-          // Current odom drift
-          odom_drift_publisher_.publish(cur_odom_drift_);
-
-          // Odom drift accumulated over multiple map passes
-          ::geometry_msgs::PoseStamped local_accumul_odom_drift;
-          local_accumul_odom_drift.header = cur_odom_drift_.header;
-          local_accumul_odom_drift.pose = 
-            ComposePoses(accumul_odom_drift_.pose, cur_odom_drift_.pose);
-          accumul_odom_drift_publisher_.publish(local_accumul_odom_drift);
         }
       }
 
@@ -145,17 +188,25 @@ class MapServer {
         kStartMappingServiceName, &MapServer::StartNewMapService, this);
     terminate_map_srv = node_handle.advertiseService(
         kStopMappingServiceName,  &MapServer::StopMappingService, this);
-    odom_drift_publisher_ = node_handle.advertise<::geometry_msgs::PoseStamped>(
-        kOdomDriftTopic, kLatestOnlyPublisherQueueSize);
-    accumul_odom_drift_publisher_ = node_handle.advertise<::geometry_msgs::PoseStamped>(
+    // odom_drift_publisher_ = node_handle.advertise<::geometry_msgs::TransformStamped>(
+    //     kOdomDriftTopic, kLatestOnlyPublisherQueueSize);
+    accumul_odom_drift_publisher_ = node_handle.advertise<::geometry_msgs::TransformStamped>(
         kAccumulOdomDriftTopic, kLatestOnlyPublisherQueueSize);
+    std::string odom_frame = "vislam";
+    std::string init_odom_frame = "first_" + odom_frame;
 
     ::ros::Rate rate(100);
     while(::ros::ok()) {
       if (start_map_) {
+        // Start thread that estimates drift
+        std::thread h_drift_estimator_task = 
+          std::thread(&MapServer::TfTask, this, init_odom_frame, odom_frame);
 
         // The function below blocks until it finishes mapping
         this->StartNewMap();
+
+        // Wait until thread returns
+        h_drift_estimator_task.join();
 
         // We don't start mapping the next time until a service request
         start_map_ = false;

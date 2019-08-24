@@ -27,13 +27,21 @@
   <node name="odom_in_body" pkg="odom_relay"
     type="odom_relay_twist_body" />
 
+    <!-- Publish tf from odometry origin to base_link link -->
+  <node pkg="odom_relay" type="odom_relay_tf" name="odom_tf"
+    output="screen">
+    <param name="odom_topic" value="/vislam/odometry"/> 
+    <param name="frame_id" value="vislam"/> 
+    <param name="child_frame_id" value="base_link"/> 
+  </node>
+
   <node name="cartographer_node" pkg="cartographer_ros"
       type="cartographer_node" args="
           -configuration_directory $(find cartographer_ros)/configuration_files
           -configuration_basename my_robot_localization.lua
           -load_state_filename $(arg load_state_filename)"
       output="screen">
-    <remap from="scan" to="/laser/scan" />
+    <remap from="scan" to="/laser/scan_laser_link" />
     <remap from="imu" to="/mavros/imu/data" />
     <remap from="odom" to="/vislam/odometry_body" />
   </node>
@@ -44,7 +52,5 @@
   <node name="rviz" pkg="rviz" type="rviz" required="true"
       args="-d $(find cartographer_ros)/configuration_files/cindy_3d.rviz" />
 
-  <node name="playbag" pkg="rosbag" type="play"
-      args="--clock $(arg bag_filename)
-      --topics /laser/scan /mavros/imu/data /vislam/odometry" />
+
 </launch>

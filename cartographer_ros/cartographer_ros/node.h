@@ -74,8 +74,8 @@ class Node {
   // Runs final optimization. All trajectories have to be finished when calling.
   void RunFinalOptimization();
 
-  // Starts the first trajectory with the default topics.
-  void StartTrajectoryWithDefaultTopics(const TrajectoryOptions& options);
+  // Starts the first trajectory with the default topics. (returns trajectory_id)
+  int StartTrajectoryWithDefaultTopics(const TrajectoryOptions& options);
 
   // Returns unique SensorIds for multiple input bag files based on
   // their TrajectoryOptions.
@@ -115,9 +115,6 @@ class Node {
 
   // Loads a serialized SLAM state from a .pbstream file.
   void LoadState(const std::string& state_filename, bool load_frozen_state);
-
-  // returns computed odom drift so far
-  geometry_msgs::PoseStamped GetOdomDrift() { return odom_drift_xy_;}
 
   ::ros::NodeHandle* node_handle();
 
@@ -217,13 +214,10 @@ class Node {
   // they do not fire.
   std::vector<::ros::WallTimer> wall_timers_;
 
-  // Bool for terminating mapping
-  bool terminate_map_;
+  geometry_msgs::TransformStamped tf_map2odom_, tf_firstmap2odom;
 
-  // Save first odometry information
-  nav_msgs::Odometry first_odom_;
-  geometry_msgs::TransformStamped cartographer_estimated_pose_;
-  geometry_msgs::PoseStamped odom_drift_xy_;
+  // Save trajectory id
+  int trajectory_id_;
 };
 
 }  // namespace cartographer_ros

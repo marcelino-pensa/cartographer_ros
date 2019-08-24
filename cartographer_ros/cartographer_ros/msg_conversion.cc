@@ -40,7 +40,6 @@
 #include "sensor_msgs/MultiEchoLaserScan.h"
 #include "sensor_msgs/PointCloud2.h"
 #include "tf2_ros/transform_broadcaster.h"
-#include "tf2/LinearMath/Matrix3x3.h"
 
 namespace cartographer_ros {
 namespace {
@@ -282,6 +281,14 @@ geometry_msgs::Point ToGeometryMsgPoint(const Eigen::Vector3d& vector3d) {
   return point;
 }
 
+geometry_msgs::Vector3 ToGeometryMsgVector3(const geometry_msgs::Point& pt) {
+  geometry_msgs::Vector3 vec3;
+  vec3.x = pt.x;
+  vec3.y = pt.y;
+  vec3.z = pt.z;
+  return vec3;
+}
+
 Eigen::Vector3d LatLongAltToEcef(const double latitude, const double longitude,
                                  const double altitude) {
   // https://en.wikipedia.org/wiki/Geographic_coordinate_conversion#From_geodetic_to_ECEF_coordinates
@@ -324,7 +331,7 @@ std::unique_ptr<nav_msgs::OccupancyGrid> CreateOccupancyGridMsg(
   const int width = cairo_image_surface_get_width(painted_slices.surface.get());
   const int height =
       cairo_image_surface_get_height(painted_slices.surface.get());
-  const ros::Time now = ros::Time::now();
+  // const ros::Time now = ros::Time::now();
 
   occupancy_grid->header.stamp = time;
   occupancy_grid->header.frame_id = frame_id;
@@ -366,15 +373,16 @@ std::unique_ptr<nav_msgs::OccupancyGrid> CreateOccupancyGridMsg(
 geometry_msgs::Pose ComposePoses(
     const geometry_msgs::Pose& pose1,
     const geometry_msgs::Pose& pose2) {
+  const tf2::Transform transf1 = PoseToTfTransform(pose1);
+  const tf2::Transform transf2 = PoseToTfTransform(pose2);
+  const tf2::Transform transf = transf1*transf2;
+  const tf2::Quaternion q = transf.getRotation();
+  const tf2::Vector3 t = transf.getOrigin();
+
   geometry_msgs::Pose pose;
-  pose.position.x = pose2.position.x + pose1.position.x;
-  pose.position.y = pose2.position.y + pose1.position.y;
-  pose.position.z = pose2.position.z + pose1.position.z;
-  geometry_msgs::Quaternion quat1 = pose1.orientation;
-  geometry_msgs::Quaternion quat2 = pose2.orientation;
-  tf2::Quaternion q1(quat1.x, quat1.y, quat1.z, quat1.w);
-  tf2::Quaternion q2(quat2.x, quat2.y, quat2.z, quat2.w);
-  tf2::Quaternion q = q2*q1;
+  pose.position.x = t.x();
+  pose.position.y = t.y();
+  pose.position.z = t.z();
   pose.orientation.x = q.x();
   pose.orientation.y = q.y();
   pose.orientation.z = q.z();
@@ -382,23 +390,68 @@ geometry_msgs::Pose ComposePoses(
   return pose;
 }
 
+geometry_msgs::Transform ComposeTransforms(
+    const geometry_msgs::Transform& transform1,
+    const geometry_msgs::Transform& transform2) {
+  geometry_msgs::Transform transform;
+
+  const tf2::Transform transf1 = TransformToTfTransform(transform1);
+  const tf2::Transform transf2 = TransformToTfTransform(transform2);
+  const tf2::Transform transf = transf1*transf2;
+  const tf2::Quaternion q = transf.getRotation();
+  const tf2::Vector3 t = transf.getOrigin();
+
+  transform.translation.x = t.x();
+  transform.translation.y = t.y();
+  transform.translation.z = t.z();
+  transform.rotation.x = q.x();
+  transform.rotation.y = q.y();
+  transform.rotation.z = q.z();
+  transform.rotation.w = q.w();
+
+  return transform;
+}
+
 geometry_msgs::Pose ComputeRelativePose(
     const geometry_msgs::Pose& pose1,
     const geometry_msgs::Pose& pose2) {
+  const tf2::Transform transf1 = PoseToTfTransform(pose1);
+  const tf2::Transform transf2 = PoseToTfTransform(pose2);
+  const tf2::Transform transf_2_to_1 = transf1.inverse()*transf2;
+  const tf2::Quaternion q = transf_2_to_1.getRotation();
+  const tf2::Vector3 t = transf_2_to_1.getOrigin();
+
   geometry_msgs::Pose pose;
-  pose.position.x = pose2.position.x - pose1.position.x;
-  pose.position.y = pose2.position.y - pose1.position.y;
-  pose.position.z = pose2.position.z - pose1.position.z;
-  geometry_msgs::Quaternion quat1 = pose1.orientation;
-  geometry_msgs::Quaternion quat2 = pose2.orientation;
-  tf2::Quaternion q1(quat1.x, quat1.y, quat1.z, quat1.w);
-  tf2::Quaternion q2(quat2.x, quat2.y, quat2.z, quat2.w);
-  tf2::Quaternion q = q2*q1.inverse();
+  pose.position.x = t.x();
+  pose.position.y = t.y();
+  pose.position.z = t.z();
   pose.orientation.x = q.x();
   pose.orientation.y = q.y();
   pose.orientation.z = q.z();
   pose.orientation.w = q.w();
   return pose;
+}
+
+geometry_msgs::Point RotateVector(const geometry_msgs::Point &pt,
+                                  const geometry_msgs::Quaternion &quat) {
+  const tf2::Vector3 t(pt.x, pt.y, pt.z);
+  const tf2::Quaternion q(quat.x, quat.y, quat.z, quat.w);
+  const tf2::Matrix3x3 R(q);
+  const tf2::Vector3 rot_t = R*t;
+  geometry_msgs::Point rot_pt;
+  rot_pt.x = rot_t.x();
+  rot_pt.y = rot_t.y();
+  rot_pt.z = rot_t.z();
+  return rot_pt;
+}
+
+geometry_msgs::Quaternion ZeroQuaternion() {
+  geometry_msgs::Quaternion quat;
+  quat.x = 0.0;
+  quat.y = 0.0;
+  quat.z = 0.0;
+  quat.w = 1.0;
+  return quat;
 }
 
 geometry_msgs::Pose ZeroPose() {
@@ -406,11 +459,67 @@ geometry_msgs::Pose ZeroPose() {
   pose.position.x = 0.0;
   pose.position.y = 0.0;
   pose.position.z = 0.0;
-  pose.orientation.x = 0.0;
-  pose.orientation.y = 0.0;
-  pose.orientation.z = 0.0;
-  pose.orientation.w = 1.0;
+  pose.orientation = ZeroQuaternion();
   return pose;
+}
+
+geometry_msgs::Transform ZeroTransform() {
+  geometry_msgs::Transform transform;
+  transform.translation.x = 0.0;
+  transform.translation.y = 0.0;
+  transform.translation.z = 0.0;
+  transform.rotation = ZeroQuaternion();
+  return transform;
+}
+
+geometry_msgs::TransformStamped PoseToTransformStamped(
+      const geometry_msgs::PoseStamped &pose,
+      const std::string &child_frame_id) {
+  geometry_msgs::TransformStamped transform_stamped;
+  transform_stamped.header = pose.header;
+  transform_stamped.child_frame_id = child_frame_id;
+  transform_stamped.transform.translation = ToGeometryMsgVector3(pose.pose.position);
+  transform_stamped.transform.rotation = pose.pose.orientation;
+  return transform_stamped;
+}
+
+tf2::Transform PoseToTfTransform(const geometry_msgs::Pose &pose) {
+  const geometry_msgs::Point point = pose.position;
+  const geometry_msgs::Quaternion quat = pose.orientation;
+
+  const tf2::Vector3 t(point.x, point.y, point.z);
+  const tf2::Quaternion q(quat.x, quat.y, quat.z, quat.w);
+
+  const tf2::Transform transf(q, t);
+  return transf;
+}
+
+tf2::Transform TransformToTfTransform(const geometry_msgs::Transform &transform) {
+  const geometry_msgs::Vector3 point = transform.translation;
+  const geometry_msgs::Quaternion quat = transform.rotation;
+
+  const tf2::Vector3 t(point.x, point.y, point.z);
+  const tf2::Quaternion q(quat.x, quat.y, quat.z, quat.w);
+
+  const tf2::Transform transf(q, t);
+  return transf;
+}
+
+geometry_msgs::TransformStamped tf_to_tf2(tf::StampedTransform transform) {
+  geometry_msgs::TransformStamped transform2;
+  tf::Quaternion q = transform.getRotation();
+  tf::Vector3 v = transform.getOrigin();
+  transform2.transform.translation.x = v.getX();
+  transform2.transform.translation.y = v.getY();
+  transform2.transform.translation.z = v.getZ();
+  transform2.transform.rotation.x = q.getX();
+  transform2.transform.rotation.y = q.getY();
+  transform2.transform.rotation.z = q.getZ();
+  transform2.transform.rotation.w = q.getW();
+  transform2.header.frame_id = transform.frame_id_;
+  transform2.header.stamp    = transform.stamp_;
+  transform2.child_frame_id  = transform.child_frame_id_;
+  return transform2;
 }
 
 double GetYaw(const geometry_msgs::Quaternion& quat) {

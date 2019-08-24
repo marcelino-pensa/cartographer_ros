@@ -36,6 +36,9 @@
 #include "sensor_msgs/LaserScan.h"
 #include "sensor_msgs/MultiEchoLaserScan.h"
 #include "sensor_msgs/PointCloud2.h"
+#include "tf2/LinearMath/Transform.h"
+#include <tf/transform_listener.h>
+
 
 namespace cartographer_ros {
 
@@ -53,6 +56,8 @@ geometry_msgs::PoseStamped ToGeometryMsgPose(
     const geometry_msgs::TransformStamped& transform);
 
 geometry_msgs::Point ToGeometryMsgPoint(const Eigen::Vector3d& vector3d);
+
+geometry_msgs::Vector3 ToGeometryMsgVector3(const geometry_msgs::Point& pt);
 
 // Converts ROS message to point cloud. Returns the time when the last point
 // was acquired (different from the ROS timestamp). Timing of points is given in
@@ -101,11 +106,32 @@ geometry_msgs::Pose ComposePoses(
     const geometry_msgs::Pose& pose1,
     const geometry_msgs::Pose& pose2);
 
+geometry_msgs::Transform ComposeTransforms(
+    const geometry_msgs::Transform& transform1,
+    const geometry_msgs::Transform& transform2);
+
 geometry_msgs::Pose ComputeRelativePose(
     const geometry_msgs::Pose& pose1,
     const geometry_msgs::Pose& pose2);
 
+geometry_msgs::Point RotateVector(const geometry_msgs::Point &pt,
+                                  const geometry_msgs::Quaternion &quat);
+
+geometry_msgs::Quaternion ZeroQuaternion();
+
 geometry_msgs::Pose ZeroPose();
+
+geometry_msgs::Transform ZeroTransform();
+
+geometry_msgs::TransformStamped PoseToTransformStamped(
+      const geometry_msgs::PoseStamped &pose,
+      const std::string &child_frame_id);
+
+tf2::Transform PoseToTfTransform(const geometry_msgs::Pose &pose);
+
+tf2::Transform TransformToTfTransform(const geometry_msgs::Transform &transform);
+
+geometry_msgs::TransformStamped tf_to_tf2(tf::StampedTransform transform);
 
 double GetYaw(const geometry_msgs::Quaternion& quat);
 

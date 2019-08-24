@@ -28,6 +28,7 @@ set(PACKAGE_DEPENDENCIES
   roslib
   sensor_msgs
   std_msgs
+  tf
   tf2
   tf2_eigen
   tf2_ros

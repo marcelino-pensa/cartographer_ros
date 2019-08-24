@@ -21,10 +21,10 @@ options = {
   trajectory_builder = TRAJECTORY_BUILDER,
   map_frame = "map",
   tracking_frame = "base_link",
-  published_frame = "base_link",
+  published_frame = "vislam",
   odom_frame = "vislam",
   provide_odom_frame = false,
-  publish_frame_projected_to_2d = true,
+  publish_frame_projected_to_2d = false,
   use_odometry = true,
   use_nav_sat = false,
   use_landmarks = false,
@@ -49,15 +49,18 @@ TRAJECTORY_BUILDER_2D.num_accumulated_range_data = 1
 
 TRAJECTORY_BUILDER_2D.use_online_correlative_scan_matching = true
 TRAJECTORY_BUILDER_2D.use_imu_data = false
-TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.linear_search_window = 0.15
-TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.angular_search_window = math.rad(35.)
+
+-- TRAJECTORY_BUILDER_2D.ceres_scan_matcher.rotation_weight = 1e2
+-- TRAJECTORY_BUILDER_2D.ceres_scan_matcher.translation_weight = 1e2
+-- TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.linear_search_window = 0.15
+-- TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.angular_search_window = math.rad(35.)
 
 -- TRAJECTORY_BUILDER_2D.submaps.num_range_data = 35
 -- TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.translation_delta_cost_weight = 10.
 -- TRAJECTORY_BUILDER_2D.real_time_correlative_scan_matcher.rotation_delta_cost_weight = 1e-1
 
-POSE_GRAPH.optimization_problem.huber_scale = 1e2
-POSE_GRAPH.optimize_every_n_nodes = 20
+-- POSE_GRAPH.optimization_problem.huber_scale = 1e2
+-- POSE_GRAPH.optimize_every_n_nodes = 20
 -- POSE_GRAPH.constraint_builder.min_score = 0.65
 
 

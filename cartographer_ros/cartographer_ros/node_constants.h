@@ -42,9 +42,7 @@ constexpr char kStartMappingServiceName[] = "/cartographer/start_mapping";
 constexpr char kTrajectoryNodeListTopic[] = "trajectory_node_list";
 constexpr char kLandmarkPosesListTopic[] = "landmark_poses_list";
 constexpr char kConstraintListTopic[] = "constraint_list";
-constexpr char kOdomFromStartTopic[] = "/cartographer/odom_from_start";
-constexpr char kOdomDriftTopic[] = "/cartographer/odom_xy_yaw_drift";
-constexpr char kAccumulOdomDriftTopic[] = "/cartographer/accumul_odom_xy_yaw_drift";
+constexpr char kAccumulOdomDriftTopic[] = "/dynamic_transform_publisher/vislam_drift_tf";
 constexpr double kConstraintPublishPeriodSec = 0.5;
 
 constexpr int kInfiniteSubscriberQueueSize = 0;

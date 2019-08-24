@@ -102,9 +102,6 @@ Node::Node(
   constraint_list_publisher_ =
       node_handle_.advertise<::visualization_msgs::MarkerArray>(
           kConstraintListTopic, kLatestOnlyPublisherQueueSize);
-  odom_from_start_publisher_ = 
-      node_handle_.advertise<::geometry_msgs::PoseStamped>(
-          kOdomFromStartTopic, kLatestOnlyPublisherQueueSize);
 
   service_servers_.push_back(node_handle_.advertiseService(
       kSubmapQueryServiceName, &Node::HandleSubmapQuery, this));
@@ -134,8 +131,6 @@ Node::Node(
   wall_timers_.push_back(node_handle_.createWallTimer(
       ::ros::WallDuration(kConstraintPublishPeriodSec),
       &Node::PublishConstraintList, this));
-
-  terminate_map_ = false;
 }
 
 Node::~Node() { FinishAllTrajectories(); }
@@ -185,7 +180,7 @@ void Node::AddSensorSamplers(const int trajectory_id,
 
 void Node::PublishTrajectoryStates(const ::ros::WallTimerEvent& timer_event) {
   carto::common::MutexLocker lock(&mutex_);
-  // uint count = 0;
+  bool new_data = false;
   for (const auto& entry : map_builder_bridge_.GetTrajectoryStates()) {
     const auto& trajectory_state = entry.second;
 
@@ -194,6 +189,7 @@ void Node::PublishTrajectoryStates(const ::ros::WallTimerEvent& timer_event) {
     // frequency, and republishing it would be computationally wasteful.
     if (trajectory_state.local_slam_data->time !=
         extrapolator.GetLastPoseTime()) {
+      new_data = true;
       if (scan_matched_point_cloud_publisher_.getNumSubscribers() > 0) {
         // TODO(gaschler): Consider using other message without time
         // information.
@@ -236,6 +232,7 @@ void Node::PublishTrajectoryStates(const ::ros::WallTimerEvent& timer_event) {
     const Rigid3d tracking_to_map =
         trajectory_state.local_to_map * tracking_to_local;
 
+
     if (trajectory_state.published_to_tracking != nullptr) {
       if (trajectory_state.trajectory_options.provide_odom_frame) {
         std::vector<geometry_msgs::TransformStamped> stamped_transforms;
@@ -256,17 +253,37 @@ void Node::PublishTrajectoryStates(const ::ros::WallTimerEvent& timer_event) {
         stamped_transforms.push_back(stamped_transform);
 
         tf_broadcaster_.sendTransform(stamped_transforms);
-        // cartographer_estimated_pose_ = ToGeometryMsgTransform(tracking_to_map);
-        // std::cout << stamped_transform.child_frame_id << " " << count++ << std::endl;
       } else {
-        stamped_transform.header.frame_id = node_options_.map_frame;
-        stamped_transform.child_frame_id =
-            trajectory_state.trajectory_options.published_frame;
-        stamped_transform.transform = ToGeometryMsgTransform(
-            tracking_to_map * (*trajectory_state.published_to_tracking));
-        tf_broadcaster_.sendTransform(stamped_transform);
-        cartographer_estimated_pose_ = stamped_transform;
-        // std::cout << stamped_transform.child_frame_id << " " << count++ << std::endl;
+        if (new_data) {
+          stamped_transform.header.frame_id = node_options_.map_frame;
+          stamped_transform.child_frame_id =
+              trajectory_state.trajectory_options.published_frame;
+          stamped_transform.transform = ToGeometryMsgTransform(
+              tracking_to_map * (*trajectory_state.published_to_tracking));
+          tf_broadcaster_.sendTransform(stamped_transform);
+          tf_map2odom_ = stamped_transform;
+
+          // publish transform between map and local frame origin 
+          // (useful when reusing maps)
+          stamped_transform.header.frame_id = node_options_.map_frame;
+          stamped_transform.child_frame_id = node_options_.map_frame + "_local";
+          stamped_transform.transform = ToGeometryMsgTransform(trajectory_state.local_to_map);
+          tf_broadcaster_.sendTransform(stamped_transform);
+
+          // Initialize first tf_map2odom
+          if (tf_firstmap2odom.header.stamp.toSec() == 0) {
+            tf_firstmap2odom = tf_map2odom_;
+            tf_firstmap2odom.header.frame_id = node_options_.map_frame + "_local";
+            tf_firstmap2odom.child_frame_id = "first_" + tf_map2odom_.child_frame_id;
+          }
+        } else {
+          tf_map2odom_.header.stamp = ToRos(now);
+          tf_broadcaster_.sendTransform(tf_map2odom_);
+        }
+
+        // Send first odometry transform
+        tf_firstmap2odom.header.stamp = tf_map2odom_.header.stamp;
+        tf_broadcaster_.sendTransform(tf_firstmap2odom);
       }
     }
   }
@@ -526,10 +543,11 @@ bool Node::HandleStartTrajectory(
   return true;
 }
 
-void Node::StartTrajectoryWithDefaultTopics(const TrajectoryOptions& options) {
+int Node::StartTrajectoryWithDefaultTopics(const TrajectoryOptions& options) {
   carto::common::MutexLocker lock(&mutex_);
   CHECK(ValidateTrajectoryOptions(options));
-  AddTrajectory(options, DefaultSensorTopics());
+  trajectory_id_ = AddTrajectory(options, DefaultSensorTopics());
+  return trajectory_id_;
 }
 
 std::vector<
@@ -630,39 +648,7 @@ void Node::HandleOdometryMessage(const int trajectory_id,
   if (odometry_data_ptr != nullptr) {
     extrapolators_.at(trajectory_id).AddOdometryData(*odometry_data_ptr);
   }
-  sensor_bridge_ptr->HandleOdometryMessage(sensor_id, msg);
-
-  // Save odometry data if this is the first one received
-  if (first_odom_.header.stamp.toSec() == 0) {
-    first_odom_ = *msg;
-  }
-
-  // Compute how much odometry has shifted since start
-  geometry_msgs::PoseStamped odom_pose_from_start;
-  odom_pose_from_start.pose = msg->pose.pose;
-  odom_pose_from_start.header = msg->header;
-  odom_pose_from_start.header.frame_id = node_options_.map_frame;
-  odom_pose_from_start.pose = ComputeRelativePose(first_odom_.pose.pose, msg->pose.pose);
-  odom_from_start_publisher_.publish(odom_pose_from_start);
-  
-  if (cartographer_estimated_pose_.header.stamp.toSec() != 0) {
-    // Compute how much odom has shifted w.r.t. cartographer
-    geometry_msgs::PoseStamped est_pose = ToGeometryMsgPose(cartographer_estimated_pose_);
-    geometry_msgs::PoseStamped odom_drift, odom_drift_xy;
-    odom_drift.pose = ComputeRelativePose(est_pose.pose, odom_pose_from_start.pose);
-    double yaw = GetYaw(odom_drift.pose.orientation);
-
-    // Compute error in XY frame
-    odom_drift_xy.pose = odom_drift.pose;
-    odom_drift_xy.pose.position.z = 0.0;
-    odom_drift_xy.pose.orientation = QuatFromYaw(yaw);
-    odom_drift_xy.header = cartographer_estimated_pose_.header;
-    odom_drift_xy.header.frame_id = cartographer_estimated_pose_.child_frame_id;
-    
-    // Save into class variable
-    odom_drift_xy_ = odom_drift_xy;
-  }
-  
+  sensor_bridge_ptr->HandleOdometryMessage(sensor_id, msg);  
 }
 
 void Node::HandleNavSatFixMessage(const int trajectory_id,
