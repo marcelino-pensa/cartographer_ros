@@ -20,6 +20,7 @@
 #include "cartographer_ros/ros_log_sink.h"
 #include "cartographer_ros/msg_conversion.h"
 #include <cartographer_ros/tf_class.h>
+#include <cartographer_ros/second_order_filter.h>
 #include "gflags/gflags.h"
 #include "tf2_ros/transform_listener.h"
 
@@ -49,15 +50,17 @@ class MapServer {
  public:
   bool start_map_;
   bool terminate_map_, terminate_thread_;
-  ::ros::Publisher odom_drift_publisher_, accumul_odom_drift_publisher_;
+  ::ros::Publisher accumul_odom_drift_pub_, filtered_odom_drift_pub_;
   ::ros::ServiceServer new_map_srv, terminate_map_srv;
   ::geometry_msgs::TransformStamped accumul_odom_drift_;
   ::geometry_msgs::PoseStamped cur_odom_drift_, cur_odom_drift_map_;
   uint drift_estimation_rate_;
+  double lowpass_time_constant_;
 
   MapServer() {
     ::ros::NodeHandle node_handle("~");
     node_handle.param("map_at_launch", start_map_, true);
+    node_handle.param("lowpass_time_constant", lowpass_time_constant_, 0.25);
     terminate_map_ = false;
     terminate_thread_ = false;
     accumul_odom_drift_.transform = ZeroTransform();
@@ -75,6 +78,7 @@ class MapServer {
     geometry_msgs::TransformStamped transform;
     tf2_ros::TransformBroadcaster tf_broadcaster;
     geometry_msgs::TransformStamped local_accumul_odom_drift;
+    geometry_msgs::TransformStamped filtered_accumul_odom_drift;
 
     ROS_INFO("[cartographer_ros]: tf task started for tf from %s to %s.",
              frame_id.c_str(), child_frame_id.c_str());
@@ -82,6 +86,9 @@ class MapServer {
     // Variable initialization
     accumul_odom_drift_.header.frame_id = frame_id;
     accumul_odom_drift_.child_frame_id = child_frame_id;
+
+    // Initialize low-pass filter for drift estimation
+    lpf::SecondOrderFilter3d lpf(accumul_odom_drift_, lowpass_time_constant_);
 
     while (!terminate_thread_ && ros::ok()) {
         // Get the transforms
@@ -103,7 +110,14 @@ class MapServer {
           local_accumul_odom_drift.transform.rotation = ZeroQuaternion();
           local_accumul_odom_drift.header.frame_id = child_frame_id + "_corrected";
           local_accumul_odom_drift.child_frame_id = child_frame_id;
-          accumul_odom_drift_publisher_.publish(local_accumul_odom_drift);
+          accumul_odom_drift_pub_.publish(local_accumul_odom_drift);
+
+          // Filter the drift estimator
+          filtered_accumul_odom_drift = lpf.Filter(local_accumul_odom_drift);
+          filtered_odom_drift_pub_.publish(filtered_accumul_odom_drift);
+          filtered_accumul_odom_drift.header.frame_id = frame_id;
+          filtered_accumul_odom_drift.child_frame_id = child_frame_id + "_drift_filtered";
+          tf_broadcaster.sendTransform(filtered_accumul_odom_drift);
 
           // Publish accumulated drift into cartographer's tf tree
           // obj_tf.PrintTransform();
@@ -190,8 +204,10 @@ class MapServer {
         kStopMappingServiceName,  &MapServer::StopMappingService, this);
     // odom_drift_publisher_ = node_handle.advertise<::geometry_msgs::TransformStamped>(
     //     kOdomDriftTopic, kLatestOnlyPublisherQueueSize);
-    accumul_odom_drift_publisher_ = node_handle.advertise<::geometry_msgs::TransformStamped>(
+    accumul_odom_drift_pub_ = node_handle.advertise<::geometry_msgs::TransformStamped>(
         kAccumulOdomDriftTopic, kLatestOnlyPublisherQueueSize);
+    filtered_odom_drift_pub_ = node_handle.advertise<::geometry_msgs::TransformStamped>(
+        kFilteredOdomDriftTopic, kLatestOnlyPublisherQueueSize);
     std::string odom_frame = "vislam";
     std::string init_odom_frame = "first_" + odom_frame;
 

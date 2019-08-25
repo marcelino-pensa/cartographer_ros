@@ -289,6 +289,22 @@ geometry_msgs::Vector3 ToGeometryMsgVector3(const geometry_msgs::Point& pt) {
   return vec3;
 }
 
+geometry_msgs::Vector3 ToGeometryMsgVector3(const Eigen::Vector3d& vector3d) {
+  geometry_msgs::Vector3 vec3;
+  vec3.x = vector3d[0];
+  vec3.y = vector3d[1];
+  vec3.z = vector3d[2];
+  return vec3;
+}
+
+geometry_msgs::Vector3 ToGeometryMsgVector3(const double &x, const double &y, const double &z) {
+  geometry_msgs::Vector3 vec3;
+  vec3.x = x;
+  vec3.y = y;
+  vec3.z = z;
+  return vec3;
+}
+
 Eigen::Vector3d LatLongAltToEcef(const double latitude, const double longitude,
                                  const double altitude) {
   // https://en.wikipedia.org/wiki/Geographic_coordinate_conversion#From_geodetic_to_ECEF_coordinates

@@ -18,4 +18,6 @@ TRAJECTORY_BUILDER.pure_localization = true
 
 POSE_GRAPH.optimize_every_n_nodes = 1
 
+POSE_GRAPH.constraint_builder.global_localization_min_score = 0.4
+
 return options

@@ -44,6 +44,9 @@
     <remap from="odom" to="/vislam/odometry_body" />
 
     <param name="/map_at_launch" value="true"/>
+
+    <!-- Time-constant for the drift estimation lowpass filter -->
+    <param name="/lowpass_time_constant" value="0.5"/>
   </node>
 
   <node name="cartographer_occupancy_grid_node" pkg="cartographer_ros"

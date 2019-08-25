@@ -59,6 +59,10 @@ geometry_msgs::Point ToGeometryMsgPoint(const Eigen::Vector3d& vector3d);
 
 geometry_msgs::Vector3 ToGeometryMsgVector3(const geometry_msgs::Point& pt);
 
+geometry_msgs::Vector3 ToGeometryMsgVector3(const Eigen::Vector3d& vector3d);
+
+geometry_msgs::Vector3 ToGeometryMsgVector3(const double &x, const double &y, const double &z);
+
 // Converts ROS message to point cloud. Returns the time when the last point
 // was acquired (different from the ROS timestamp). Timing of points is given in
 // the fourth component of each point relative to `Time`.
