@@ -43,7 +43,7 @@
     <remap from="imu" to="/mavros/imu/data" />
     <remap from="odom" to="/vislam/odometry_body" />
 
-    <param name="/map_at_launch" value="true"/>
+    <param name="/map_at_launch" value="false"/>
 
     <!-- Time-constant for the drift estimation lowpass filter -->
     <param name="/lowpass_time_constant" value="0.5"/>

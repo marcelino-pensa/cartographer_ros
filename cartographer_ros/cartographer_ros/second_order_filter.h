@@ -12,7 +12,7 @@ namespace lpf {
 
 class SecondOrderFilter3d{
  public:
-    Eigen::Vector2d X_x, X_y, X_z;
+    Eigen::Vector2d X_x_, X_y_, X_z_;
     ros::Time time_;
     Eigen::Matrix2d I_2x2; // Identity matrix
 
@@ -20,14 +20,16 @@ class SecondOrderFilter3d{
 	Eigen::Matrix2d A;
 	Eigen::Vector2d B;
 
-    // Constructors
+    // Constructor
     SecondOrderFilter3d() {}
-    SecondOrderFilter3d(const geometry_msgs::TransformStamped &init_point,
-    	                const double &time_constant) {
+    
+
+    void Initialize(const geometry_msgs::TransformStamped &init_point,
+    	            const double &time_constant) {
     	// Set position/velocity/acceleration initial states
-    	X_x =  Eigen::Vector2d(init_point.transform.translation.x, 0.0);
-    	X_y =  Eigen::Vector2d(init_point.transform.translation.y, 0.0);
-    	X_z =  Eigen::Vector2d(init_point.transform.translation.z, 0.0);
+    	X_x_ =  Eigen::Vector2d(init_point.transform.translation.x, 0.0);
+    	X_y_ =  Eigen::Vector2d(init_point.transform.translation.y, 0.0);
+    	X_z_ =  Eigen::Vector2d(init_point.transform.translation.z, 0.0);
     	time_ = init_point.header.stamp;
     	
     	// Low pass filter parameters
@@ -48,19 +50,21 @@ class SecondOrderFilter3d{
     	if (dt < 0) {  // Return current state
     		cur_state.header.stamp = ros::Time(time_);
     		cur_state.transform.translation = 
-    			cartographer_ros::ToGeometryMsgVector3(X_x[0], X_y[0], X_z[0]);
+    			cartographer_ros::ToGeometryMsgVector3(X_x_[0], X_y_[0], X_z_[0]);
     		return cur_state;
     	}
 
     	//Propagate states (crude euler integration)
 		geometry_msgs::Vector3 meas_state = measurement.transform.translation;
-		X_x = (I_2x2 + A*dt)*X_x + dt*B*meas_state.x;
-		X_y = (I_2x2 + A*dt)*X_y + dt*B*meas_state.y;
-		X_z = (I_2x2 + A*dt)*X_z + dt*B*meas_state.z;
+		X_x_ = (I_2x2 + A*dt)*X_x_ + dt*B*meas_state.x;
+		X_y_ = (I_2x2 + A*dt)*X_y_ + dt*B*meas_state.y;
+		X_z_ = (I_2x2 + A*dt)*X_z_ + dt*B*meas_state.z;
 
     	time_ = measurement.header.stamp;
     	cur_state.transform.translation = 
-    			cartographer_ros::ToGeometryMsgVector3(X_x[0], X_y[0], X_z[0]);
+    			cartographer_ros::ToGeometryMsgVector3(X_x_[0], X_y_[0], X_z_[0]);
+    	// std::cout << "CURRENT FILTER VALUES:" <<
+     //    		X_x_[0] << " " << X_y_[0] << " " << X_z_[0] << " " << dt << std::endl;
     	return cur_state;
     }
 

@@ -79,6 +79,7 @@ class MapServer {
     tf2_ros::TransformBroadcaster tf_broadcaster;
     geometry_msgs::TransformStamped local_accumul_odom_drift;
     geometry_msgs::TransformStamped filtered_accumul_odom_drift;
+    bool initialize_filter = true;
 
     ROS_INFO("[cartographer_ros]: tf task started for tf from %s to %s.",
              frame_id.c_str(), child_frame_id.c_str());
@@ -87,13 +88,19 @@ class MapServer {
     accumul_odom_drift_.header.frame_id = frame_id;
     accumul_odom_drift_.child_frame_id = child_frame_id;
 
-    // Initialize low-pass filter for drift estimation
-    lpf::SecondOrderFilter3d lpf(accumul_odom_drift_, lowpass_time_constant_);
+    // Low-pass filter for drift estimation
+    lpf::SecondOrderFilter3d lpf;
 
     while (!terminate_thread_ && ros::ok()) {
         // Get the transforms
         if(obj_tf.GetTransform(child_frame_id, frame_id)) {
           transform = tf_to_tf2(obj_tf.transform_);
+
+          if (initialize_filter) {  // Synchronize initial timestamp
+            initialize_filter = false;
+            accumul_odom_drift_.header.stamp = transform.header.stamp;
+            lpf.Initialize(accumul_odom_drift_, lowpass_time_constant_);            
+          }
 
           // Publish accumulated drift
           local_accumul_odom_drift.transform = 
