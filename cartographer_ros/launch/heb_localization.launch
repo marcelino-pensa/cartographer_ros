@@ -31,7 +31,7 @@
   <node pkg="odom_relay" type="odom_relay_tf" name="odom_tf"
     output="screen">
     <param name="odom_topic" value="/vislam/odometry"/> 
-    <param name="frame_id" value="vislam"/> 
+    <param name="frame_id" value="vislam_odom"/> 
     <param name="child_frame_id" value="base_link"/> 
   </node>
 

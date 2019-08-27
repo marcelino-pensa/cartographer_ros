@@ -108,20 +108,26 @@ class MapServer {
           local_accumul_odom_drift.header.stamp = transform.header.stamp;
           local_accumul_odom_drift.header.frame_id = frame_id;
           local_accumul_odom_drift.child_frame_id = child_frame_id + "_drift";
-          // transform.header.frame_id = frame_id;
-          // transform.child_frame_id  = child_frame_id + "_drift";
           tf_broadcaster.sendTransform(local_accumul_odom_drift);
+          // std::cout << "transform: " << frame_id << " ==> " << child_frame_id << ": "
+          //           << local_accumul_odom_drift.transform.translation.x << " "
+          //           << local_accumul_odom_drift.transform.translation.y << std::endl;
 
           // Convert into XY-only drift
           local_accumul_odom_drift.transform.translation.z = 0.0;
           local_accumul_odom_drift.transform.rotation = ZeroQuaternion();
-          local_accumul_odom_drift.header.frame_id = child_frame_id + "_corrected";
-          local_accumul_odom_drift.child_frame_id = child_frame_id;
+          local_accumul_odom_drift.header.frame_id = "vislam_corrected";
+          local_accumul_odom_drift.child_frame_id = "vislam";
           accumul_odom_drift_pub_.publish(local_accumul_odom_drift);
 
           // Filter the drift estimator
           filtered_accumul_odom_drift = lpf.Filter(local_accumul_odom_drift);
           filtered_odom_drift_pub_.publish(filtered_accumul_odom_drift);
+
+          // std::cout << "filtered transform: " << frame_id << " ==> " << child_frame_id << ": "
+          //           << filtered_accumul_odom_drift.transform.translation.x << " "
+          //           << filtered_accumul_odom_drift.transform.translation.y << std::endl;
+
           filtered_accumul_odom_drift.header.frame_id = frame_id;
           filtered_accumul_odom_drift.child_frame_id = child_frame_id + "_drift_filtered";
           tf_broadcaster.sendTransform(filtered_accumul_odom_drift);
@@ -215,7 +221,7 @@ class MapServer {
         kAccumulOdomDriftTopic, kLatestOnlyPublisherQueueSize);
     filtered_odom_drift_pub_ = node_handle.advertise<::geometry_msgs::TransformStamped>(
         kFilteredOdomDriftTopic, kLatestOnlyPublisherQueueSize);
-    std::string odom_frame = "vislam";
+    std::string odom_frame = "vislam_odom";
     std::string init_odom_frame = "first_" + odom_frame;
 
     ::ros::Rate rate(100);

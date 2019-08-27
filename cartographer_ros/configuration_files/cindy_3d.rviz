@@ -58,7 +58,15 @@ Visualization Manager:
         All Enabled: true
         base_link:
           Value: true
-        first_vislam:
+        base_link_vislam:
+          Value: true
+        drone193_bl:
+          Value: true
+        drone193_odom:
+          Value: true
+        enunwu:
+          Value: true
+        first_vislam_odom:
           Value: true
         imu_link:
           Value: true
@@ -66,9 +74,21 @@ Visualization Manager:
           Value: true
         map:
           Value: true
+        map_local:
+          Value: true
         odom_frame:
           Value: true
+        store:
+          Value: true
         vislam:
+          Value: true
+        vislam_corrected:
+          Value: true
+        vislam_odom:
+          Value: true
+        vislam_odom_drift:
+          Value: true
+        vislam_odom_drift_filtered:
           Value: true
       Marker Scale: 1
       Name: TF
@@ -77,9 +97,13 @@ Visualization Manager:
       Show Names: true
       Tree:
         map:
-          first_vislam:
-            {}
-          vislam:
+          map_local:
+            first_vislam_odom:
+              vislam_odom_drift:
+                {}
+              vislam_odom_drift_filtered:
+                {}
+          vislam_odom:
             base_link:
               imu_link:
                 {}
@@ -133,11 +157,7 @@ Visualization Manager:
       Submaps:
         All: true
         Trajectory 0:
-          0.91: true
-          1.1: true
-          Value: true
-        Trajectory 1:
-          0.6: true
+          0.15: true
           Value: true
       Topic: /submap_list
       Tracking frame: base_link
@@ -179,7 +199,6 @@ Visualization Manager:
       Name: Trajectories
       Namespaces:
         Trajectory 0: true
-        Trajectory 1: true
       Queue Size: 100
       Value: true
     - Class: rviz/MarkerArray
@@ -250,7 +269,7 @@ Visualization Manager:
           Scale: 1
           Value: true
         Value: true
-      Enabled: true
+      Enabled: false
       Keep: 1
       Name: Odometry
       Position Tolerance: 9.99999975e-05
@@ -266,7 +285,7 @@ Visualization Manager:
         Value: Axes
       Topic: /vislam/odometry_body
       Unreliable: false
-      Value: true
+      Value: false
   Enabled: true
   Global Options:
     Background Color: 100; 100; 100
