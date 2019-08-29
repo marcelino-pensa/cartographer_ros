@@ -273,6 +273,20 @@ geometry_msgs::PoseStamped ToGeometryMsgPose(
   return pose;
 }
 
+geometry_msgs::PoseStamped ToGeometryMsgPose(
+    const geometry_msgs::Transform& transform,
+    const std::string& frame_id,
+    const ros::Time& stamp) {
+  geometry_msgs::PoseStamped pose;
+  pose.header.frame_id = frame_id;
+  pose.header.stamp = stamp;
+  pose.pose.position.x = transform.translation.x;
+  pose.pose.position.y = transform.translation.y;
+  pose.pose.position.z = transform.translation.z;
+  pose.pose.orientation = transform.rotation;
+  return pose;
+}
+
 geometry_msgs::Point ToGeometryMsgPoint(const Eigen::Vector3d& vector3d) {
   geometry_msgs::Point point;
   point.x = vector3d.x();

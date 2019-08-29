@@ -262,6 +262,13 @@ void Node::PublishTrajectoryStates(const ::ros::WallTimerEvent& timer_event) {
               tracking_to_map * (*trajectory_state.published_to_tracking));
           tf_broadcaster_.sendTransform(stamped_transform);
           tf_map2odom_ = stamped_transform;
+          
+          // Get odometry measurement
+          tf_odom_measurement_.transform = 
+            ToGeometryMsgTransform((*trajectory_state.published_to_tracking).inverse());
+          tf_odom_measurement_.header.frame_id = trajectory_state.trajectory_options.published_frame;
+          tf_odom_measurement_.header.stamp = stamped_transform.header.stamp;
+          tf_odom_measurement_.child_frame_id = trajectory_state.trajectory_options.odom_frame;
 
           // publish transform between map and local frame origin 
           // (useful when reusing maps)
@@ -648,7 +655,14 @@ void Node::HandleOdometryMessage(const int trajectory_id,
   if (odometry_data_ptr != nullptr) {
     extrapolators_.at(trajectory_id).AddOdometryData(*odometry_data_ptr);
   }
-  sensor_bridge_ptr->HandleOdometryMessage(sensor_id, msg);  
+  sensor_bridge_ptr->HandleOdometryMessage(sensor_id, msg);
+
+  // tf_odom_measurement_.transform.translation = ToGeometryMsgVector3(msg->pose.pose.position);
+  // tf_odom_measurement_.transform.rotation = msg->pose.pose.orientation;
+  // tf_odom_measurement_.header.stamp = msg->header.stamp;
+  // tf_odom_measurement_.header.frame_id = msg->header.frame_id;
+  // tf_odom_measurement_.child_frame_id = msg->child_frame_id;
+  // tf_broadcaster_.sendTransform(tf_odom_measurement_); 
 }
 
 void Node::HandleNavSatFixMessage(const int trajectory_id,

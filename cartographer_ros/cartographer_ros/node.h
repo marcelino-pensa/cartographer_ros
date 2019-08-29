@@ -109,7 +109,8 @@ class Node {
       const sensor_msgs::MultiEchoLaserScan::ConstPtr& msg);
   void HandlePointCloud2Message(int trajectory_id, const std::string& sensor_id,
                                 const sensor_msgs::PointCloud2::ConstPtr& msg);
-
+  geometry_msgs::TransformStamped GetLastOdom() {return tf_odom_measurement_;}
+  
   // Serializes the complete Node state.
   void SerializeState(const std::string& filename);
 
@@ -215,6 +216,7 @@ class Node {
   std::vector<::ros::WallTimer> wall_timers_;
 
   geometry_msgs::TransformStamped tf_map2odom_, tf_firstmap2odom;
+  geometry_msgs::TransformStamped tf_odom_measurement_;
 
   // Save trajectory id
   int trajectory_id_;

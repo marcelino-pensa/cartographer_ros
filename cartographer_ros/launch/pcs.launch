@@ -30,7 +30,7 @@
     output="screen">
     <param name="odom_topic" value="/vislam/odometry"/> 
     <param name="frame_id" value="vislam_odom"/> 
-    <param name="child_frame_id" value="base_link"/> 
+    <param name="child_frame_id" value="odom_frame"/> 
   </node>
 
   <node name="cartographer_node" pkg="cartographer_ros"
@@ -43,7 +43,7 @@
     <remap from="imu" to="/mavros/imu/data" />
     <remap from="odom" to="/vislam/odometry_body" />
 
-    <param name="/map_at_launch" value="true"/>
+    <param name="/map_at_launch" value="false"/>
 
     <!-- Time-constant for the drift estimation lowpass filter -->
     <param name="/lowpass_time_constant" value="0.5"/>

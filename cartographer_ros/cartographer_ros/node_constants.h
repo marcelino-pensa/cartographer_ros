@@ -39,11 +39,13 @@ constexpr char kStartTrajectoryServiceName[] = "start_trajectory";
 constexpr char kWriteStateServiceName[] = "write_state";
 constexpr char kStopMappingServiceName[] = "/cartographer/terminate_mapping";
 constexpr char kStartMappingServiceName[] = "/cartographer/start_mapping";
+constexpr char kPublishDriftServiceName[] = "/cartographer/publish_drift_tf";
 constexpr char kTrajectoryNodeListTopic[] = "trajectory_node_list";
 constexpr char kLandmarkPosesListTopic[] = "landmark_poses_list";
 constexpr char kConstraintListTopic[] = "constraint_list";
 constexpr char kAccumulOdomDriftTopic[] = "/dynamic_transform_publisher/noisy_vislam_drift_tf";
 constexpr char kFilteredOdomDriftTopic[] = "/dynamic_transform_publisher/vislam_drift_tf";
+constexpr char kFakeGPSTopic[] = "/mavros/fake_gps/mocap/pose";
 constexpr double kConstraintPublishPeriodSec = 0.5;
 
 constexpr int kInfiniteSubscriberQueueSize = 0;

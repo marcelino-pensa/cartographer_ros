@@ -59,9 +59,9 @@
   </joint>
 
   <joint name="odom_link_joint" type="fixed">
-    <parent link="base_link" />
-    <child link="odom_frame" />
-    <origin xyz="0.15 0. 0." rpy="0. 0. 0." />
+    <parent link="odom_frame" />
+    <child link="base_link" />
+    <origin xyz="-0.15 0. 0." rpy="0. 0. 0." />
   </joint>
 
 </robot>

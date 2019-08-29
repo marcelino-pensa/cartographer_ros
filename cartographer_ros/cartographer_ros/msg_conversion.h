@@ -55,6 +55,11 @@ geometry_msgs::Pose ToGeometryMsgPose(
 geometry_msgs::PoseStamped ToGeometryMsgPose(
     const geometry_msgs::TransformStamped& transform);
 
+geometry_msgs::PoseStamped ToGeometryMsgPose(
+    const geometry_msgs::Transform& transform,
+    const std::string& frame_id,
+    const ros::Time& stamp);
+
 geometry_msgs::Point ToGeometryMsgPoint(const Eigen::Vector3d& vector3d);
 
 geometry_msgs::Vector3 ToGeometryMsgVector3(const geometry_msgs::Point& pt);

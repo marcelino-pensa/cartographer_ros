@@ -23,6 +23,7 @@
 #include <cartographer_ros/second_order_filter.h>
 #include "gflags/gflags.h"
 #include "tf2_ros/transform_listener.h"
+#include <mutex>
 
 DEFINE_string(configuration_directory, "",
               "First directory in which configuration files are searched, "
@@ -50,12 +51,16 @@ class MapServer {
  public:
   bool start_map_;
   bool terminate_map_, terminate_thread_;
-  ::ros::Publisher accumul_odom_drift_pub_, filtered_odom_drift_pub_;
-  ::ros::ServiceServer new_map_srv, terminate_map_srv;
+  ::ros::Publisher accumul_odom_drift_pub_, filtered_odom_drift_pub_, fake_gps_pub_;
+  ::ros::ServiceServer new_map_srv_, terminate_map_srv_, publish_drift_srv_;
   ::geometry_msgs::TransformStamped accumul_odom_drift_;
-  ::geometry_msgs::PoseStamped cur_odom_drift_, cur_odom_drift_map_;
   uint drift_estimation_rate_;
   double lowpass_time_constant_;
+
+  // Mutex-protected variables
+  ::geometry_msgs::TransformStamped cur_odom_drift_;
+  ::geometry_msgs::TransformStamped tf_odom_;
+  std::mutex est_drift_mutex_, tf_odom_mutex_;
 
   MapServer() {
     ::ros::NodeHandle node_handle("~");
@@ -63,13 +68,15 @@ class MapServer {
     node_handle.param("lowpass_time_constant", lowpass_time_constant_, 0.25);
     terminate_map_ = false;
     terminate_thread_ = false;
+    drift_estimation_rate_ = 50; // 100 hz
+
     accumul_odom_drift_.transform = ZeroTransform();
-    drift_estimation_rate_ = 100; // 100 hz
+    accumul_odom_drift_.header.frame_id = "vislam_corrected";
+    accumul_odom_drift_.child_frame_id = "vislam";
+    cur_odom_drift_ = accumul_odom_drift_;
   }
 
-  ~MapServer() {
-
-  }
+  ~MapServer() { }
 
   void TfTask(const std::string &frame_id, const std::string &child_frame_id) {
     ROS_DEBUG("[cartographer_ros] tf Thread started with rate %f: ", drift_estimation_rate_);
@@ -77,7 +84,8 @@ class MapServer {
     ros::Rate loop_rate(drift_estimation_rate_);
     geometry_msgs::TransformStamped transform;
     tf2_ros::TransformBroadcaster tf_broadcaster;
-    geometry_msgs::TransformStamped local_accumul_odom_drift;
+    geometry_msgs::TransformStamped local_accumul_odom_drift, fake_gps;
+    geometry_msgs::PoseStamped fake_gps_pose;
     geometry_msgs::TransformStamped filtered_accumul_odom_drift;
     bool initialize_filter = true;
 
@@ -87,10 +95,12 @@ class MapServer {
     // Variable initialization
     accumul_odom_drift_.header.frame_id = frame_id;
     accumul_odom_drift_.child_frame_id = child_frame_id;
+    transform.transform = ZeroTransform();
 
     // Low-pass filter for drift estimation
     lpf::SecondOrderFilter3d lpf;
 
+    ros::Time t0 = ros::Time::now();
     while (!terminate_thread_ && ros::ok()) {
         // Get the transforms
         if(obj_tf.GetTransform(child_frame_id, frame_id)) {
@@ -108,32 +118,49 @@ class MapServer {
           local_accumul_odom_drift.header.stamp = transform.header.stamp;
           local_accumul_odom_drift.header.frame_id = frame_id;
           local_accumul_odom_drift.child_frame_id = child_frame_id + "_drift";
+          // geometry_msgs::TransformStamped drift = cur_odom_drift_;
           tf_broadcaster.sendTransform(local_accumul_odom_drift);
-          // std::cout << "transform: " << frame_id << " ==> " << child_frame_id << ": "
-          //           << local_accumul_odom_drift.transform.translation.x << " "
-          //           << local_accumul_odom_drift.transform.translation.y << std::endl;
 
-          // Convert into XY-only drift
-          local_accumul_odom_drift.transform.translation.z = 0.0;
-          local_accumul_odom_drift.transform.rotation = ZeroQuaternion();
-          local_accumul_odom_drift.header.frame_id = "vislam_corrected";
-          local_accumul_odom_drift.child_frame_id = "vislam";
-          accumul_odom_drift_pub_.publish(local_accumul_odom_drift);
+          // drift.header.stamp = ros::Time::now();
+          // drift.transform.translation.z = 0.0;
+          // drift.transform.rotation = ZeroQuaternion();
+          // ROS_WARN("[cartographer] Drift: x = %f, y = %f", 
+          //          drift.transform.translation.x, drift.transform.translation.y);
+          // filtered_odom_drift_pub_.publish(drift);
+
+          // Compute fake GPS
+          ::geometry_msgs::TransformStamped tf_odom;
+          tf_odom_mutex_.lock();
+          tf_odom = tf_odom_;
+          tf_odom_mutex_.unlock();
+          if ((tf_odom_.header.stamp.toSec() != 0) && 
+              (transform.header.stamp.toSec() != fake_gps.header.stamp.toSec())) {
+            fake_gps.header.stamp = transform.header.stamp;
+            fake_gps.header.frame_id = "vislam_odom";
+            fake_gps.child_frame_id = "fake_gps";
+            fake_gps.transform = ComposeTransforms(local_accumul_odom_drift.transform, tf_odom.transform);
+            tf_broadcaster.sendTransform(fake_gps);
+
+            fake_gps_pose = ToGeometryMsgPose(fake_gps.transform, "store", fake_gps.header.stamp);
+            fake_gps_pose.pose.position.x = -fake_gps_pose.pose.position.x;
+            fake_gps_pose.pose.position.y = -fake_gps_pose.pose.position.y;
+            fake_gps_pub_.publish(fake_gps_pose);
+          }
 
           // Filter the drift estimator
           filtered_accumul_odom_drift = lpf.Filter(local_accumul_odom_drift);
-          filtered_odom_drift_pub_.publish(filtered_accumul_odom_drift);
 
-          // std::cout << "filtered transform: " << frame_id << " ==> " << child_frame_id << ": "
-          //           << filtered_accumul_odom_drift.transform.translation.x << " "
-          //           << filtered_accumul_odom_drift.transform.translation.y << std::endl;
+          // Save current estimated drift
+          est_drift_mutex_.lock();
+          cur_odom_drift_ = filtered_accumul_odom_drift;
+          cur_odom_drift_.header.frame_id = "vislam_corrected";
+          cur_odom_drift_.child_frame_id = "vislam";
+          est_drift_mutex_.unlock();
+          // filtered_odom_drift_pub_.publish(filtered_accumul_odom_drift);
 
           filtered_accumul_odom_drift.header.frame_id = frame_id;
           filtered_accumul_odom_drift.child_frame_id = child_frame_id + "_drift_filtered";
           tf_broadcaster.sendTransform(filtered_accumul_odom_drift);
-
-          // Publish accumulated drift into cartographer's tf tree
-          // obj_tf.PrintTransform();
         }
 
         loop_rate.sleep();
@@ -141,7 +168,6 @@ class MapServer {
     // Update the accumulated drift pose
     accumul_odom_drift_.transform = 
             ComposeTransforms(accumul_odom_drift_.transform, transform.transform);
-    terminate_thread_ = false;
 
     ROS_DEBUG("[cartographer_ros] Exiting tf Thread...");
 }
@@ -155,12 +181,33 @@ class MapServer {
 
   bool StopMappingService(std_srvs::Trigger::Request  &req,
                           std_srvs::Trigger::Response &res) {
-  ROS_INFO("[cartographer] Stopping map!");
-  terminate_map_ = true;
-  terminate_thread_ = true;
-  return true;
-}
+    ROS_INFO("[cartographer] Stopping map!");
+    terminate_map_ = true;
+    terminate_thread_ = true;
+    return true;
+  }
 
+  bool PublishDrift(std_srvs::Trigger::Request  &req,
+                    std_srvs::Trigger::Response &res) {
+    ROS_INFO("[cartographer] Publishing current estimated drift!");
+    est_drift_mutex_.lock();
+    geometry_msgs::TransformStamped drift = cur_odom_drift_;
+    est_drift_mutex_.unlock();
+
+    // Set to XY drift only
+    drift.header.stamp = ros::Time::now();
+    drift.transform.translation.z = 0.0;
+    drift.transform.rotation = ZeroQuaternion();
+    ROS_WARN("[cartographer] Drift: x = %f, y = %f", 
+             drift.transform.translation.x, drift.transform.translation.y);
+    
+    // debug mode (not publishing any drift)
+    drift.transform.translation.x = 0.0;
+    drift.transform.translation.y = 0.0;
+
+    // filtered_odom_drift_pub_.publish(drift);
+    return true;
+  }
 
   void StartNewMap() {
     constexpr double kTfBufferCacheTimeInSeconds = 10.;
@@ -194,10 +241,10 @@ class MapServer {
         // Break loop
         break;
       } else {
-        if (cur_odom_drift_.header.stamp.toSec() != 0) {
-        }
+        tf_odom_mutex_.lock();
+        tf_odom_ = node.GetLastOdom();
+        tf_odom_mutex_.unlock();
       }
-
       rate.sleep();
     }
 
@@ -211,20 +258,23 @@ class MapServer {
 
   void Run() {
     ::ros::NodeHandle node_handle;
-    new_map_srv = node_handle.advertiseService(
+    new_map_srv_ = node_handle.advertiseService(
         kStartMappingServiceName, &MapServer::StartNewMapService, this);
-    terminate_map_srv = node_handle.advertiseService(
+    terminate_map_srv_ = node_handle.advertiseService(
         kStopMappingServiceName,  &MapServer::StopMappingService, this);
-    // odom_drift_publisher_ = node_handle.advertise<::geometry_msgs::TransformStamped>(
-    //     kOdomDriftTopic, kLatestOnlyPublisherQueueSize);
+    publish_drift_srv_ = node_handle.advertiseService(
+        kPublishDriftServiceName, &MapServer::PublishDrift, this);
     accumul_odom_drift_pub_ = node_handle.advertise<::geometry_msgs::TransformStamped>(
         kAccumulOdomDriftTopic, kLatestOnlyPublisherQueueSize);
     filtered_odom_drift_pub_ = node_handle.advertise<::geometry_msgs::TransformStamped>(
         kFilteredOdomDriftTopic, kLatestOnlyPublisherQueueSize);
+    fake_gps_pub_ = node_handle.advertise<::geometry_msgs::PoseStamped>(
+        kFakeGPSTopic, kLatestOnlyPublisherQueueSize);
+
     std::string odom_frame = "vislam_odom";
     std::string init_odom_frame = "first_" + odom_frame;
 
-    ::ros::Rate rate(100);
+    ::ros::Rate rate(20);
     while(::ros::ok()) {
       if (start_map_) {
         // Start thread that estimates drift
@@ -236,6 +286,7 @@ class MapServer {
 
         // Wait until thread returns
         h_drift_estimator_task.join();
+        terminate_thread_ = false;
 
         // We don't start mapping the next time until a service request
         start_map_ = false;
