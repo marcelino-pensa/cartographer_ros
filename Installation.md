@@ -8,7 +8,7 @@ sudo apt-get install -y python-wstool python-rosdep ninja-build
 mkdir catkin_ws
 cd catkin_ws
 wstool init src 
-wstool merge -t src https://raw.githubusercontent.com/marcelino-pensa/cartographer_ros/pensa-branch/cartographer_ros.rosinstall
+wstool merge -t src https://raw.githubusercontent.com/marcelino-pensa/cartographer_ros/tf_update/cartographer_ros.rosinstall
 wstool update -t src
 ```
 
