@@ -61,7 +61,7 @@ at `our Contribution page`_.
 Installing
 ============
 
-* Install our cartographer by following the guidelines in `here`_.
+* Install our cartographer by following the guidelines in `here`.
 
 .. _here: https://github.com/marcelino-pensa/cartographer_ros/blob/master/Installation.md
 
@@ -69,6 +69,6 @@ Installing
 Bag examples
 ============
 
-* Run some examples following the guidelines in `here`_.
+* Run some examples following the guidelines in `here`.
 
 .. _here: https://github.com/marcelino-pensa/cartographer_ros/blob/master/Examples.md
